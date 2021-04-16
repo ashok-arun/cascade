@@ -44,6 +44,7 @@ class CascadeServiceCDPO: public CriticalDataPathObserver<CascadeType> {
 
             auto* ctxt = dynamic_cast<
                 CascadeContext<
+                    VolatileCascadeMetadataWithStringKey,
                     VolatileCascadeStoreWithStringKey,
                     PersistentCascadeStoreWithStringKey,
                     TriggerCascadeNoStoreWithStringKey>*
@@ -77,10 +78,16 @@ int main(int argc, char** argv) {
     dump_layout(group_layout);
 #endif//NDEBUG
 
+    // META
+    CascadeServiceCDPO<VolatileCascadeMetadataWithStringKey> cdpo_vcms;
     CascadeServiceCDPO<VolatileCascadeStoreWithStringKey> cdpo_vcss;
     CascadeServiceCDPO<PersistentCascadeStoreWithStringKey> cdpo_pcss;
     CascadeServiceCDPO<TriggerCascadeNoStoreWithStringKey> cdpo_tcss;
 
+    // META
+    auto vcms_factory = [&cdpo_vcms](persistent::PersistentRegistry*, derecho::subgroup_id_t, ICascadeContext* context_ptr) {
+        return std::make_unique<VolatileCascadeMetadataWithStringKey>(&cdpo_vcms,context_ptr);
+    };
     auto vcss_factory = [&cdpo_vcss](persistent::PersistentRegistry*, derecho::subgroup_id_t, ICascadeContext* context_ptr) {
         return std::make_unique<VolatileCascadeStoreWithStringKey>(&cdpo_vcss,context_ptr);
     };
@@ -91,21 +98,24 @@ int main(int argc, char** argv) {
         return std::make_unique<TriggerCascadeNoStoreWithStringKey>(&cdpo_tcss,context_ptr);
     };
     dbg_default_trace("starting service...");
-    Service<VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeMetadataWithStringKey,
+            VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::start(group_layout,
-            {&cdpo_vcss,&cdpo_pcss},
-            vcss_factory,pcss_factory,tcss_factory);
+            {&cdpo_vcms, &cdpo_vcss,&cdpo_pcss},
+            vcms_factory,vcss_factory,pcss_factory,tcss_factory);
     dbg_default_trace("started service, waiting till it ends.");
     std::cout << "Press Enter to Shutdown." << std::endl;
     std::cin.get();
     // wait for service to quit.
-    Service<VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeMetadataWithStringKey,
+            VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::shutdown(false);
     dbg_default_trace("shutdown service gracefully");
     // you can do something here to parallel the destructing process.
-    Service<VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeMetadataWithStringKey,
+            VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::wait();
     dbg_default_trace("Finish shutdown.");

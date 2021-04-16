@@ -5,6 +5,8 @@
 #include <derecho/core/derecho.hpp>
 #include <cascade/data_flow_graph.hpp>
 #include <chrono>
+#include "../object.hpp"
+#include "../service_types.hpp"
 
 using namespace std::chrono_literals;
 
@@ -159,6 +161,18 @@ ServiceClient<CascadeTypes...>::ServiceClient(derecho::Group<CascadeTypes...>* _
     } 
 }
 
+// META
+template <typename... CascadeTypes>
+ServiceClient<CascadeTypes...>::ServiceClient(bool use_metadata, derecho::Group<CascadeTypes...>* _group_ptr):
+    group_ptr(_group_ptr) {
+    if (group_ptr == nullptr) {
+        this->external_group_ptr = std::make_unique<derecho::ExternalGroup<CascadeTypes...>>();
+        if(use_metadata){
+            this->refresh_object_pool_meta_cache();
+        }
+    } 
+}
+
 template <typename... CascadeTypes>
 node_id_t ServiceClient<CascadeTypes...>::get_my_id() const {
     if (group_ptr != nullptr) {
@@ -279,6 +293,14 @@ void ServiceClient<CascadeTypes...>::refresh_member_cache_entry(uint32_t subgrou
     }
 }
 
+// META
+const unsigned int hash_string_key(std::string &key){
+    unsigned int h_key(0);
+    for (unsigned int ch : key)
+        h_key = ch + (h_key << 4) + (h_key << 10) - h_key;
+    return h_key;
+}
+
 template <typename... CascadeTypes>
 template <typename SubgroupType>
 node_id_t ServiceClient<CascadeTypes...>::pick_member_by_policy(uint32_t subgroup_index,
@@ -334,12 +356,167 @@ node_id_t ServiceClient<CascadeTypes...>::pick_member_by_policy(uint32_t subgrou
     return node_id;
 }
 
+// META
+template <typename... CascadeTypes>
+template <typename SubgroupType>
+std::tuple<uint32_t, uint32_t> ServiceClient<CascadeTypes...>::pick_shard(const typename SubgroupType::KeyType& v_key,
+                                             uint32_t subgroup_index, uint32_t shard_index) {
+    uint32_t p_subgroup_index = subgroup_index, p_shard_index = shard_index;
+    if constexpr (std::is_same<typename SubgroupType::KeyType,std::string>::value) {
+        std::string key = (std::string) v_key;
+        size_t pos = key.rfind('/');
+        std::string prefix; // use prefix as object pool id
+        if (pos != std::string::npos) {
+            prefix = key.substr(0,pos);
+            ObjectPoolMetadata obj_pool_meta = this->find_object_pool(prefix);
+            if(obj_pool_meta.is_valid()){
+                dbg_default_trace("[OPMD] pick shard: Found object pool info of prefix: " + prefix);
+                p_subgroup_index = obj_pool_meta.subgroup_index;
+                uint32_t total_num_shards = get_number_of_shards<SubgroupType>(subgroup_index);
+                unsigned int h_key = hash_string_key(key);
+                switch(obj_pool_meta.sharding_policy) {
+                // only pick shard 0
+                case 0:
+                    p_shard_index = 0;
+                    break;
+                // only pick last shard
+                case 1:
+                    p_shard_index = total_num_shards - 1;
+                    break;
+                // use hashing scheme
+                case 2:
+                    p_shard_index = h_key % total_num_shards; // use time as random source.
+                    break;
+                default:
+                    throw new derecho::derecho_exception("Unknown member selection policy:" \
+                        + std::to_string(static_cast<unsigned int>(obj_pool_meta.sharding_policy)) );
+                    break;
+                }
+            }
+        }
+    }
+    return std::make_tuple(p_subgroup_index,p_shard_index);
+}
+
+// META
+template <typename... CascadeTypes>
+void ServiceClient<CascadeTypes...>::refresh_object_pool_meta_cache(){
+    uint32_t subgroup_index = 0, shard_index = 0;
+    persistent::version_t ver = persistent::INVALID_VERSION;
+    derecho::rpc::QueryResults<std::vector<std::string>> keys_result = this->list_keys<VolatileCascadeMetadataWithStringKey>
+                                                                                (ver,subgroup_index,shard_index);    
+    for(auto& reply_future:keys_result.get()) {
+        dbg_default_trace("[OPMD] refresh object pool metadata");
+        auto reply = reply_future.second.get();
+        for (auto& key:reply) {
+            std::string object_pool_id = static_cast<const std::string> (key); 
+            auto meta_result = this->get<VolatileCascadeMetadataWithStringKey>(object_pool_id, ver, 0, 0,false);
+            for (auto& meta_reply_future:meta_result.get()) {
+                auto temp = meta_reply_future.second.get();
+                ObjectPoolMetadata meta_reply = std::move(temp); 
+                std::unique_lock wlck(this->object_pool_info_cache_mutex);
+                object_pool_info_cache[object_pool_id] = meta_reply;
+            }
+        }
+    }
+}
+
+// META
+template <typename... CascadeTypes>
+ObjectPoolMetadata ServiceClient<CascadeTypes...>::find_object_pool( std::string& object_pool_id) {
+    std::shared_lock rlck(this->object_pool_info_cache_mutex);
+    if ( object_pool_info_cache.find(object_pool_id) != object_pool_info_cache.end()) {
+        ObjectPoolMetadata obj_pool_meta = object_pool_info_cache.at(object_pool_id);
+        return obj_pool_meta;
+    } else {
+        dbg_default_trace("[OPMS] Fetching the result from metadata object pool");
+        derecho::rpc::QueryResults<const ObjectPoolMetadata> result = this->get<VolatileCascadeMetadataWithStringKey>(object_pool_id, persistent::INVALID_VERSION, 0, 0,false);
+        for (auto& reply_future:result.get()) {
+            auto temp = reply_future.second.get();
+            ObjectPoolMetadata reply = std::move(temp);
+            rlck.unlock();
+            std::unique_lock wlck(this->object_pool_info_cache_mutex);
+            object_pool_info_cache[object_pool_id] = reply;
+            dbg_default_trace("[OPMS] Found object pool metadata" + reply.to_string());
+            return reply;
+        }
+        return ObjectPoolMetadata();
+    }
+}
+
+template <typename... CascadeTypes>
+derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::create_object_pool( 
+                                        std::string& obj_pool_id,
+                                        ObjectPoolMetadata obj_pool_meta, 
+                                        uint32_t meta_subgroup_index, uint32_t meta_shard_index){
+    ObjectPoolMetadata origin_obj_pool_meta = this->find_object_pool(obj_pool_id);
+    // TODO: optimize this make it return nullptr
+    if(origin_obj_pool_meta.is_valid()){
+        return this->put<VolatileCascadeMetadataWithStringKey>(origin_obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+    }
+    dbg_default_trace("[OPMD] create object pool metadata: (" + obj_pool_id + ", subgroup_type:" + obj_pool_meta.subgroup_type + " )");
+    std::unique_lock wlck(this->object_pool_info_cache_mutex);
+    object_pool_info_cache[obj_pool_id] = obj_pool_meta;
+    wlck.unlock();
+    return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+}
+
+template <typename... CascadeTypes>
+derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::insert_object_pool_locations( 
+                                        std::string& obj_pool_id,
+                                        std::unordered_map<std::string,uint32_t>  obj_locations,
+                                        uint32_t meta_subgroup_index, uint32_t meta_shard_index){
+    ObjectPoolMetadata obj_pool_meta = this->find_object_pool(obj_pool_id);
+    if(obj_pool_meta.is_valid()){
+        dbg_default_trace("[OPMD] Inserting object pool metadata: (" + obj_pool_id +  " )");
+        obj_pool_meta.objects_locations.insert(obj_locations.begin(), obj_locations.end()); 
+        std::unique_lock wlck(this->object_pool_info_cache_mutex);
+        object_pool_info_cache[obj_pool_id] = obj_pool_meta.objects_locations;
+        wlck.unlock();
+        return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+    }
+    // TODO: optimize how to avoid this?
+    return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);nullptr;
+}
+
+template <typename... CascadeTypes>
+derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::remove_object_pool( 
+                                        std::string& object_pool_id, 
+                                        uint32_t meta_subgroup_index, uint32_t meta_shard_index){
+    dbg_default_trace("[OPMD] remove object pool metadata : " + object_pool_id);
+    std::shared_lock rlck(this->object_pool_info_cache_mutex);
+    ObjectPoolMetadata obj_pool_meta;
+    if (object_pool_info_cache.find( object_pool_id ) != object_pool_info_cache.end()) {
+        rlck.unlock();
+        std::unique_lock wlck(this->object_pool_info_cache_mutex);
+        obj_pool_meta = object_pool_info_cache.at(object_pool_id);
+        obj_pool_meta.deleted = true;
+        object_pool_info_cache.erase (object_pool_id);
+        return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+    } else {
+        derecho::rpc::QueryResults<const ObjectPoolMetadata> result = this->get<VolatileCascadeMetadataWithStringKey>(object_pool_id, persistent::INVALID_VERSION, 0, 0,false);
+        for (auto& reply_future:result.get()) {
+            auto temp = reply_future.second.get();
+            obj_pool_meta = static_cast<ObjectPoolMetadata>(temp);
+            obj_pool_meta.deleted = true;
+            return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+        }
+    }
+    return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index,false);
+}
+
 template <typename... CascadeTypes>
 template <typename SubgroupType>
 derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::put(
         const typename SubgroupType::ObjectType& value,
         uint32_t subgroup_index,
-        uint32_t shard_index) {
+        uint32_t shard_index,
+        bool use_meta) {
+    if (use_meta){
+        std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(value.get_key_ref(),subgroup_index, shard_index);
+        subgroup_index = std::get<0>(picked_loc);
+        shard_index = std::get<1>(picked_loc);
+    } 
     if (group_ptr != nullptr) {
         std::lock_guard(this->group_ptr_mutex);
         if (static_cast<uint32_t>(group_ptr->template get_my_shard<SubgroupType>(subgroup_index)) == shard_index) {
@@ -366,7 +543,13 @@ template <typename SubgroupType>
 derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(
         const typename SubgroupType::ObjectType& value,
         uint32_t subgroup_index,
-        uint32_t shard_index) {
+        uint32_t shard_index,
+        bool use_meta) {
+    if (use_meta){
+        std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(value.get_key_ref(),subgroup_index, shard_index);
+        subgroup_index = std::get<0>(picked_loc);
+        shard_index = std::get<1>(picked_loc);
+    }  
     if (group_ptr != nullptr) {
         // TODO: can we do p2p_call to myself?
         std::lock_guard(this->group_ptr_mutex);
@@ -410,7 +593,13 @@ template <typename SubgroupType>
 derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::remove(
         const typename SubgroupType::KeyType& key,
         uint32_t subgroup_index,
-        uint32_t shard_index) {
+        uint32_t shard_index,
+        bool use_meta) {
+    if (use_meta){
+        std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(key, subgroup_index, shard_index);
+        subgroup_index = std::get<0>(picked_loc);
+        shard_index = std::get<1>(picked_loc);
+    }  
     if (group_ptr != nullptr) {
         std::lock_guard(this->group_ptr_mutex);
         if (static_cast<uint32_t>(group_ptr->template get_my_shard<SubgroupType>(subgroup_index)) == shard_index) {
@@ -438,7 +627,13 @@ derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> ServiceClien
         const typename SubgroupType::KeyType& key,
         const persistent::version_t& version,
         uint32_t subgroup_index,
-        uint32_t shard_index) {
+        uint32_t shard_index,
+        bool use_meta) {
+    if (use_meta){
+        std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(key,subgroup_index, shard_index);
+        subgroup_index = std::get<0>(picked_loc);
+        shard_index = std::get<1>(picked_loc);
+    }  
     if (group_ptr != nullptr) {
         std::lock_guard(this->group_ptr_mutex);
         if (static_cast<uint32_t>(group_ptr->template get_my_shard<SubgroupType>(subgroup_index)) == shard_index) {

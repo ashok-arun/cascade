@@ -23,6 +23,9 @@ class DairyFarmInferOCDPO: public OffCriticalDataPathObserver {
                               ICascadeContext* ctxt,
                               uint32_t worker_id) override {
         // TODO: do inference and put it to the storage object pool specified by outputs.
+
+        /* create inference engine, run the inference + regerenrate the put object(with inference results)
+         and PUT to persistent store */
     }
 
     static std::shared_ptr<OffCriticalDataPathObserver> ocdpo_ptr;

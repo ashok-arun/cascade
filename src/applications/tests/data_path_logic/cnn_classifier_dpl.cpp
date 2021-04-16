@@ -49,6 +49,7 @@ class StaticActionTable {
     /* mapping from prefix to ACTION TYPE */
     const std::vector<struct _static_action_table_entry> table;
 public:
+    /* TODO: change this table of reference */
     StaticActionTable() : table({{"pet",AT_PET_BREED},{"flower",AT_FLOWER_NAME}}) {}
     uint64_t to_action(const std::string& key) {
         uint64_t aid = AT_UNKNOWN;
@@ -87,7 +88,7 @@ class ClassifierFilter: public CriticalDataPathObserver<CascadeType> {
                              const uint32_t shidx,
                              const typename CascadeType::KeyType& key,
                              const typename CascadeType::ObjectType& value, ICascadeContext* cascade_ctxt) {
-        auto* ctxt = dynamic_cast<CascadeContext<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey>*>(cascade_ctxt);
+        auto* ctxt = dynamic_cast<CascadeContext<VolatileCascadeMetadataWithStringKey,VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey>*>(cascade_ctxt);
 
         // skip non VolatileCascadeStoreWithStringKey subgroups
         if constexpr (std::is_same<CascadeType,VolatileCascadeStoreWithStringKey>::value) {
@@ -109,6 +110,7 @@ class ClassifierFilter: public CriticalDataPathObserver<CascadeType> {
         }
     }
 };
+
 
 template <>
 std::shared_ptr<CriticalDataPathObserver<VolatileCascadeStoreWithStringKey>> get_critical_data_path_observer<VolatileCascadeStoreWithStringKey>() {
@@ -328,7 +330,7 @@ public:
     }
 
     virtual void operator () (Action&& action, ICascadeContext* cascade_ctxt, uint32_t worker_id) {
-        auto* ctxt = dynamic_cast<CascadeContext<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey>*>(cascade_ctxt);
+        auto* ctxt = dynamic_cast<CascadeContext<VolatileCascadeMetadataWithStringKey,VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey>*>(cascade_ctxt);
         /* step 1 prepare context */
         bool use_gpu = derecho::hasCustomizedConfKey(DPL_CONF_USE_GPU)?derecho::getConfBoolean(DPL_CONF_USE_GPU):false;
         if (use_gpu && ctxt->resource_descriptor.gpus.size()==0) {
@@ -339,6 +341,7 @@ public:
             use_gpu? mxnet::cpp::DeviceType::kGPU : mxnet::cpp::DeviceType::kCPU,
             use_gpu? ctxt->resource_descriptor.gpus[worker_id % ctxt->resource_descriptor.gpus.size()]:0);
         /* create inference engines */
+        /* TODO: created everytime when someone enter offcritical datapath? */
         static thread_local InferenceEngine flower_ie(
                 mxnet_ctxt,
                 derecho::getConfString(DPL_CONF_FLOWER_SYNSET),

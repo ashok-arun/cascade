@@ -254,5 +254,82 @@ std::enable_if_t<std::disjunction<std::is_same<ObjectWithStringKey,VT>,std::is_s
 }
 **/
 
+// META
+class ObjectPoolMetadata :  public mutils::ByteRepresentable,
+                            public ICascadeObject<std::string>,
+                            public IKeepTimestamp,
+                            public IVerifyPreviousVersion {
+public:
+    std::string                                         object_pool_id;          // the identifier of the object pool
+    std::string                                         subgroup_type;           // the subgroup type of the object pool
+    uint32_t                                            subgroup_index;          // the subgroup index of the object pool
+    int                                                 sharding_policy;         // index of shard member selection policy, default 0 
+    mutable std::unordered_map<std::string,
+                            uint32_t>                   objects_locations;       // the list of shards where it contains the objects
+    mutable bool                                        deleted;                 // deadline of the cleaning of objects inside the object_pool
+
+
+    bool operator==(const ObjectPoolMetadata& other);
+    void operator=(const ObjectPoolMetadata& other);
+
+    // constructor 0 : copy constructor
+    ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index );
+    
+    // constructor 0.5: copy constructor
+    ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy);
+    
+    // constructor 1: copy constructor
+    ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy, 
+                        const std::unordered_map<std::string,uint32_t> _objects_locations);
+
+    // constructor 2 : move constructor
+    ObjectPoolMetadata (ObjectPoolMetadata&& other);
+
+    // constructor 3 : copy constructor
+    ObjectPoolMetadata (const ObjectPoolMetadata& other);
+
+    // constructor 4 : default invalid constructor
+    ObjectPoolMetadata();
+
+    virtual const std::string& get_key_ref() const override;
+    virtual bool is_null() const override;
+    virtual bool is_valid() const override;
+
+    // functions not used, overwrite to match derecho::cascade::IKeepPreviousVersion::___
+    virtual void set_version(persistent::version_t ver) const override;
+    virtual persistent::version_t get_version() const override;
+    virtual void set_timestamp(uint64_t ts_us) const override;
+    virtual uint64_t get_timestamp() const override;
+    virtual void set_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
+    virtual bool verify_previous_version(persistent::version_t prev_ver, persistent::version_t perv_ver_by_key) const override;
+
+
+    DEFAULT_SERIALIZATION_SUPPORT(ObjectPoolMetadata,object_pool_id, subgroup_type, subgroup_index, 
+                                                    sharding_policy, objects_locations);
+
+    // IK and IV for volatile cascade store
+    static std::string IK;
+    static ObjectPoolMetadata IV;
+
+    std::string to_string() {
+        std::string res = "ObjectPoolMetadata{pool_id:"+ object_pool_id + ", subgroup type:" + subgroup_type 
+        +", subgroup index: " + std::to_string(subgroup_index) 
+        + ", sharding policy: "+ std::to_string(sharding_policy) + "}";
+        return res;
+    }
+};
+
+inline std::ostream& operator<<(std::ostream& out, const ObjectPoolMetadata& o) {
+    out << "ObjectMetadataWithStringKey{object pool id:" << o.object_pool_id
+        << ", \n   object pool info: subgroup type" << o.subgroup_type
+        << ", subgroup index: " << std::to_string(o.subgroup_index) << "}";
+    return out;
+}
+
 } // namespace cascade
 } // namespace derecho

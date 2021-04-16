@@ -314,6 +314,14 @@ PYBIND11_MODULE(cascade_py,m)
               }
 		return pol;
           }, "Get the member selection policy of the specified subgroup and shard.")
+        // .def("trigger_put", [](ServiceClientAPI& capi, std::string service_type, std::string& key, py::bytes value, uint32_t subgroup_index, uint32_t shard_index){
+
+        //     std::string val = std::string(value);
+        //     on_subgroup_type(service_type, return trigger_put, capi, key, val, subgroup_index, shard_index);
+
+        //     return py::cast(NULL);
+
+        //  }, "Put a long key and its corresponding value into cascade. The new object would \n replace the old object if a new key-value pair with the same key as one put \n before is put.")
          .def("put", [](ServiceClientAPI& capi, std::string service_type, std::string& key, py::bytes value, uint32_t subgroup_index, uint32_t shard_index){
 
             std::string val = std::string(value);

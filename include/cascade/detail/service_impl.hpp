@@ -350,33 +350,38 @@ node_id_t ServiceClient<CascadeTypes...>::pick_member_by_policy(uint32_t subgrou
 // META
 template <typename... CascadeTypes>
 template <typename SubgroupType>
-std::tuple<uint32_t, uint32_t> ServiceClient<CascadeTypes...>::pick_shard(const std::string& obj_pool_id, const typename SubgroupType::KeyType& v_key) {
+std::tuple<uint32_t, uint32_t> ServiceClient<CascadeTypes...>::pick_shard(const typename SubgroupType::KeyType& v_key) {
     uint32_t p_subgroup_index = 0, p_shard_index =0;
     if constexpr (std::is_same<typename SubgroupType::KeyType,std::string>::value) {
         std::string key = (std::string) v_key;
-        ObjectPoolMetadata obj_pool_meta = this->find_object_pool(obj_pool_id);
-        if(obj_pool_meta.is_valid()){
-            dbg_default_trace("[OPMD] pick shard: Found object pool info of prefix: " + obj_pool_id);
-            p_subgroup_index = obj_pool_meta.subgroup_index;
-            uint32_t total_num_shards = get_number_of_shards<SubgroupType>(p_subgroup_index);
-            unsigned int h_key = hash_string_key(key);
-            switch(obj_pool_meta.sharding_policy) {
-            // only pick shard 0
-            case 0:
-                p_shard_index = 0;
-                break;
-            // only pick last shard
-            case 1:
-                p_shard_index = total_num_shards - 1;
-                break;
-            // use hashing scheme
-            case 2:
-                p_shard_index = h_key % total_num_shards; // use time as random source.
-                break;
-            default:
-                throw new derecho::derecho_exception("Unknown member selection policy:" \
-                    + std::to_string(static_cast<unsigned int>(obj_pool_meta.sharding_policy)) );
-                break;
+        size_t pos = key.rfind('/');
+        std::string prefix; // use prefix as object pool id
+        if (pos != std::string::npos) {
+            prefix = key.substr(0,pos);
+            ObjectPoolMetadata obj_pool_meta = this->find_object_pool(prefix);
+            if(obj_pool_meta.is_valid()){
+                dbg_default_trace("[OPMD] pick shard: Found object pool info of prefix: " + prefix);
+                p_subgroup_index = obj_pool_meta.subgroup_index;
+                uint32_t total_num_shards = get_number_of_shards<SubgroupType>(p_subgroup_index);
+                unsigned int h_key = hash_string_key(key);
+                switch(obj_pool_meta.sharding_policy) {
+                // only pick shard 0
+                case 0:
+                    p_shard_index = 0;
+                    break;
+                // only pick last shard
+                case 1:
+                    p_shard_index = total_num_shards - 1;
+                    break;
+                // use hashing scheme
+                case 2:
+                    p_shard_index = h_key % total_num_shards; // use time as random source.
+                    break;
+                default:
+                    throw new derecho::derecho_exception("Unknown member selection policy:" \
+                        + std::to_string(static_cast<unsigned int>(obj_pool_meta.sharding_policy)) );
+                    break;
+                }
             }
         }
     }
@@ -494,11 +499,21 @@ derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceCl
     return this->put<VolatileCascadeMetadataWithStringKey>(obj_pool_meta, meta_subgroup_index, meta_shard_index);
 }
 
+template <typename... CascadeTypes>
+template <typename SubgroupType>
+derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::put(
+                                                                    const typename SubgroupType::ObjectType& value){
+    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(value.get_key_ref());
+    uint32_t subgroup_index = std::get<0>(picked_loc);
+    uint32_t shard_index = std::get<1>(picked_loc);
+    return this->put<SubgroupType>(value, subgroup_index, shard_index);
+}
+
 
 template <typename... CascadeTypes>
 template <typename SubgroupType>
-derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(const std::string& object_pool_id, const typename SubgroupType::ObjectType& object){
-    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(object_pool_id, object.get_key_ref());
+derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(const typename SubgroupType::ObjectType& object){
+    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(object.get_key_ref());
     uint32_t subgroup_index = std::get<0>(picked_loc);
     uint32_t shard_index = std::get<1>(picked_loc);
     return this->trigger_put<SubgroupType>(object, subgroup_index, shard_index);
@@ -506,9 +521,8 @@ derecho::rpc::QueryResults<void> ServiceClient<CascadeTypes...>::trigger_put(con
 
 template <typename... CascadeTypes>
 template <typename SubgroupType>
-derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::remove(
-                        const std::string& object_pool_id, const typename SubgroupType::KeyType& key){
-    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(object_pool_id, key);
+derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::remove(const typename SubgroupType::KeyType& key){
+    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(key);
     uint32_t subgroup_index = std::get<0>(picked_loc);
     uint32_t shard_index = std::get<1>(picked_loc);
     return this->remove<SubgroupType>(key, subgroup_index, shard_index);
@@ -518,10 +532,9 @@ derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceCl
 template <typename... CascadeTypes>
 template <typename SubgroupType>
 derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> ServiceClient<CascadeTypes...>::get(
-        const std::string& object_pool_id,
         const typename SubgroupType::KeyType& key,
         const persistent::version_t& version){
-    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(object_pool_id, key);
+    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(key);
     uint32_t subgroup_index = std::get<0>(picked_loc);
     uint32_t shard_index = std::get<1>(picked_loc);
     return this->get<SubgroupType>(key, version, subgroup_index, shard_index);
@@ -554,17 +567,6 @@ derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceCl
         node_id_t node_id = pick_member_by_policy<SubgroupType>(subgroup_index,shard_index);
         return caller.template p2p_send<RPC_NAME(put)>(node_id,value);
     }
-}
-
-template <typename... CascadeTypes>
-template <typename SubgroupType>
-derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> ServiceClient<CascadeTypes...>::put(
-                                                                    const std::string& object_pool_id, 
-                                                                    const typename SubgroupType::ObjectType& value){
-    std::tuple<uint32_t, uint32_t> picked_loc = pick_shard<SubgroupType>(object_pool_id, value.get_key_ref());
-    uint32_t subgroup_index = std::get<0>(picked_loc);
-    uint32_t shard_index = std::get<1>(picked_loc);
-    return this->put<SubgroupType>(value, subgroup_index, shard_index);
 }
 
 template <typename... CascadeTypes>

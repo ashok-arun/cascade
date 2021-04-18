@@ -169,7 +169,7 @@ void put<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string
 }
 
 template <typename SubgroupType>
-void put_to_object_pool(ServiceClientAPI& capi, std::string& object_pool_id, std::string& key, std::string& value, persistent::version_t pver, persistent::version_t pver_bk) {
+void put_to_object_pool(ServiceClientAPI& capi, std::string& key, std::string& value, persistent::version_t pver, persistent::version_t pver_bk) {
     typename SubgroupType::ObjectType obj;
     if constexpr (std::is_same<typename SubgroupType::KeyType,uint64_t>::value) {
         obj.key = static_cast<uint64_t>(std::stol(key));
@@ -182,12 +182,12 @@ void put_to_object_pool(ServiceClientAPI& capi, std::string& object_pool_id, std
     obj.previous_version = pver;
     obj.previous_version_by_key = pver_bk;
     obj.blob = Blob(value.c_str(),value.length());
-    derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = capi.template put<SubgroupType>(object_pool_id, obj);
+    derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = capi.template put<SubgroupType>(obj);
     check_put_and_remove_result(result);
 }
 
 template <>
-void put_to_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string& object_pool_id, std::string& key, std::string& value, persistent::version_t pver, persistent::version_t pver_bk) {
+void put_to_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string& key, std::string& value, persistent::version_t pver, persistent::version_t pver_bk) {
     print_red("TCSS does not support put_to_object_pool.");
 }
 
@@ -211,7 +211,7 @@ void trigger_put(ServiceClientAPI& capi, std::string& key, std::string& value, u
 }
 
 template <typename SubgroupType>
-void trigger_put_to_object_pool(ServiceClientAPI& capi,std::string& object_pool_id, std::string& key, std::string& value) {
+void trigger_put_to_object_pool(ServiceClientAPI& capi, std::string& key, std::string& value) {
     typename SubgroupType::ObjectType obj;
     if constexpr (std::is_same<typename SubgroupType::KeyType,uint64_t>::value) {
         obj.key = static_cast<uint64_t>(std::stol(key));
@@ -222,7 +222,7 @@ void trigger_put_to_object_pool(ServiceClientAPI& capi,std::string& object_pool_
         return;
     }
     obj.blob = Blob(value.c_str(),value.length());
-    derecho::rpc::QueryResults<void> result = capi.template trigger_put<SubgroupType>(object_pool_id, obj);
+    derecho::rpc::QueryResults<void> result = capi.template trigger_put<SubgroupType>( obj);
     result.get();
     std::cout << "trigger_put is done." << std::endl;
 }
@@ -274,12 +274,12 @@ void remove<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::str
 }
 
 template <typename SubgroupType>
-void remove_from_object_pool(ServiceClientAPI& capi, std::string& object_pool_id,std::string& key) {
+void remove_from_object_pool(ServiceClientAPI& capi, std::string& key) {
     if constexpr (std::is_same<typename SubgroupType::KeyType,uint64_t>::value) {
-        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = std::move(capi.template remove<SubgroupType>(object_pool_id, static_cast<uint64_t>(std::stol(key)) ));
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = std::move(capi.template remove<SubgroupType>(static_cast<uint64_t>(std::stol(key)) ));
         check_put_and_remove_result(result);
     } else if constexpr (std::is_same<typename SubgroupType::KeyType,std::string>::value) {
-        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = std::move(capi.template remove<SubgroupType>(object_pool_id, key));
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result = std::move(capi.template remove<SubgroupType>(key));
         check_put_and_remove_result(result);
     } else {
         print_red(std::string("Unhandled KeyType:") + typeid(typename SubgroupType::KeyType).name());
@@ -288,7 +288,7 @@ void remove_from_object_pool(ServiceClientAPI& capi, std::string& object_pool_id
 }
 
 template <>
-void remove_from_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string& object_pool_id,std::string& key) {
+void remove_from_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string& key) {
     print_red("TCSS does not support remove_from_object_pool.");
 }
 
@@ -317,20 +317,20 @@ void get<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string
 }
 
 template <typename SubgroupType>
-void get_from_object_pool(ServiceClientAPI& capi, std::string& object_pool_id, std::string& key, persistent::version_t ver) {
+void get_from_object_pool(ServiceClientAPI& capi,  std::string& key, persistent::version_t ver) {
     if constexpr (std::is_same<typename SubgroupType::KeyType,uint64_t>::value) {
         derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> result = capi.template get<SubgroupType>(
-                object_pool_id, static_cast<uint64_t>(std::stol(key)),ver);
+                 static_cast<uint64_t>(std::stol(key)),ver);
         check_get_result(result);
     } else if constexpr (std::is_same<typename SubgroupType::KeyType,std::string>::value) {
         derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> result = capi.template get<SubgroupType>(
-                object_pool_id,key,ver);
+                key,ver);
         check_get_result(result);
     }
 }
 
 template <>
-void get_from_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi, std::string& object_pool_id, std::string& key, persistent::version_t ver) {
+void get_from_object_pool<TriggerCascadeNoStoreWithStringKey>(ServiceClientAPI& capi,std::string& key, persistent::version_t ver) {
     print_red("TCSS does not support get_from_object_pool.");
 }
 
@@ -557,14 +557,14 @@ void interactive_test(ServiceClientAPI& capi) {
     "remove_object_pool <object_pool_id>\n" /*This should be only used by Admin*/
     "find_object_pool <object_pool_id>\n"
     "put <type> <key> <value> [pver(-1)] [pver_by_key(-1)] [subgroup_index(0)] [shard_index(0)]\n\tput an object\n"
-    "put_to_object_pool <object_pool_id> <key> <value>  [pver(-1)] [pver_by_key(-1)] \n\tput an object\n"
+    "put_to_object_pool <object_pool_id/key> <value>  [pver(-1)] [pver_by_key(-1)] \n\tput an object\n"
     "trigger_put <type> <key> <value> [subgroup_index(0)] [shard_index(0)]\n\ttrigger put an object\n"
-    "trigger_put_to_object_pool <object_pool_id> <key> <value> \n\tput an object\n"
+    "trigger_put_to_object_pool <object_pool_id/key> <value> \n\tput an object\n"
     "collective_trigger_put <type> <key> <value> <subgroup_index> <node1> [node2 ...]\n\t collectively trigger put an object\n"
     "remove <type> <key> [subgroup_index(0)] [shard_index(0)]\n\tremove an object\n"
-    "remove_from_object_pool <object_pool_id> <key> \n\tremove an object\n"
+    "remove_from_object_pool <object_pool_id/key> \n\tremove an object\n"
     "get <type> <key> [version(-1)] [subgroup_index(0)] [shard_index(0)]\n\tget an object(by version)\n"
-    "get_from_object_pool <object_pool_id> <key> \n\tremove an object\n"
+    "get_from_object_pool <object_pool_id/key> \n\tremove an object\n"
     "get_by_time <type> <key> <ts_us> [subgroup_index(0)] [shard_index(0)]\n\tget an object by timestamp\n"
     "get_size <type> <key> [version(-1)] [subgroup_index(0)] [shard_index(0)]\n\tget the size of an object(by version)\n"
     "get_size_by_time <type> <key> <ts_us> [subgroup_index(0)] [shard_index(0)]\n\tget the size of an object by timestamp\n"
@@ -702,22 +702,29 @@ void interactive_test(ServiceClientAPI& capi) {
         } else if (cmd_tokens[0] == "put_to_object_pool") {
             persistent::version_t pver = persistent::INVALID_VERSION;
             persistent::version_t pver_bk = persistent::INVALID_VERSION;
-            if (cmd_tokens.size() < 4) {
+            if (cmd_tokens.size() < 3) {
                 print_red("Invalid format:" + cmdline);
                 continue;
             }
             /* TODO: currently PUT(obj_pool_id, value) take SubgroupType as template,
                 * this find_object_pool_metadata is called twice: here & during put */
-            ObjectPoolMetadata obj_metadata = find_object_pool(capi, cmd_tokens[1]);
-            if(!obj_metadata.is_valid()){
-                continue;
+            std::string key = (std::string) cmd_tokens[1];
+            size_t pos = key.rfind('/');
+            std::string prefix; // use prefix as object pool id
+            if (pos != std::string::npos) {
+                prefix = key.substr(0,pos);
+                ObjectPoolMetadata obj_metadata = find_object_pool(capi, prefix);
+                if(obj_metadata.is_valid()){
+                    subgroup_type = obj_metadata.subgroup_type;
+                    if (cmd_tokens.size() >= 5)
+                        pver = static_cast<persistent::version_t>(std::stol(cmd_tokens[4]));
+                    if (cmd_tokens.size() >= 6)
+                        pver_bk = static_cast<persistent::version_t>(std::stol(cmd_tokens[5]));
+                    on_subgroup_type(subgroup_type,put_to_object_pool,capi,
+                                    cmd_tokens[1]/*key*/,cmd_tokens[2]/*value*/,pver,pver_bk);
+                }
             }
-            subgroup_type = obj_metadata.subgroup_type;
-            if (cmd_tokens.size() >= 5)
-                pver = static_cast<persistent::version_t>(std::stol(cmd_tokens[4]));
-            if (cmd_tokens.size() >= 6)
-                pver_bk = static_cast<persistent::version_t>(std::stol(cmd_tokens[5]));
-            on_subgroup_type(subgroup_type,put_to_object_pool,capi,cmd_tokens[1]/*object_pool_id*/,cmd_tokens[2]/*key*/,cmd_tokens[3]/*value*/,pver,pver_bk);
+            
         } else if (cmd_tokens[0] == "trigger_put") {
             if (cmd_tokens.size() < 4) {
                 print_red("Invalid format:" + cmdline);
@@ -729,16 +736,21 @@ void interactive_test(ServiceClientAPI& capi) {
                 shard_index = static_cast<uint32_t>(std::stoi(cmd_tokens[5]));
             on_subgroup_type(cmd_tokens[1],trigger_put,capi,cmd_tokens[2]/*key*/,cmd_tokens[3]/*value*/,subgroup_index,shard_index);
         } else if (cmd_tokens[0] == "trigger_put_to_object_pool") {
-            if (cmd_tokens.size() < 4) {
+            if (cmd_tokens.size() < 3) {
                 print_red("Invalid format:" + cmdline);
                 continue;
             }
-            ObjectPoolMetadata obj_metadata = find_object_pool(capi, cmd_tokens[1]);
-            if(!obj_metadata.is_valid()){
-                continue;
+            std::string key = (std::string) cmd_tokens[1];
+            size_t pos = key.rfind('/');
+            std::string prefix; // use prefix as object pool id
+            if (pos != std::string::npos) {
+                prefix = key.substr(0,pos);
+                ObjectPoolMetadata obj_metadata = find_object_pool(capi, prefix);
+                if(obj_metadata.is_valid()){
+                    subgroup_type = obj_metadata.subgroup_type;
+                    on_subgroup_type(subgroup_type,trigger_put_to_object_pool,capi,cmd_tokens[1]/*key*/,cmd_tokens[2]/*value*/);
+                }
             }
-            subgroup_type = obj_metadata.subgroup_type;
-            on_subgroup_type(subgroup_type,trigger_put_to_object_pool,capi,cmd_tokens[1]/*object_pool_id*/,cmd_tokens[2]/*key*/,cmd_tokens[3]/*value*/);
         } else if (cmd_tokens[0] == "collective_trigger_put") {
             std::vector<node_id_t> nodes;
             if (cmd_tokens.size() < 4) {
@@ -766,16 +778,21 @@ void interactive_test(ServiceClientAPI& capi) {
                 shard_index = static_cast<uint32_t>(std::stoi(cmd_tokens[4]));
             on_subgroup_type(cmd_tokens[1],remove,capi,cmd_tokens[2]/*key*/,subgroup_index,shard_index);
         } else if (cmd_tokens[0] == "remove_from_object_pool") {
-            if (cmd_tokens.size() < 3) {
+            if (cmd_tokens.size() < 2) {
                 print_red("Invalid format:" + cmdline);
                 continue;
             }
-            ObjectPoolMetadata obj_metadata = find_object_pool(capi, cmd_tokens[1]);
-            if(!obj_metadata.is_valid()){
-                continue;
+            std::string key = (std::string) cmd_tokens[1];
+            size_t pos = key.rfind('/');
+            std::string prefix; // use prefix as object pool id
+            if (pos != std::string::npos) {
+                prefix = key.substr(0,pos);
+                ObjectPoolMetadata obj_metadata = find_object_pool(capi, prefix);
+                if(obj_metadata.is_valid()){
+                    subgroup_type = obj_metadata.subgroup_type;
+                    on_subgroup_type(subgroup_type,remove_from_object_pool,capi,cmd_tokens[1]/*key*/);
+                }
             }
-            subgroup_type = obj_metadata.subgroup_type;
-            on_subgroup_type(subgroup_type,remove_from_object_pool,capi,cmd_tokens[1]/*object_pool_id*/,cmd_tokens[2]/*key*/);
         } else if (cmd_tokens[0] == "get") {
             if (cmd_tokens.size() < 3) {
                 print_red("Invalid format:" + cmdline);
@@ -789,20 +806,24 @@ void interactive_test(ServiceClientAPI& capi) {
                 shard_index = static_cast<uint32_t>(std::stoi(cmd_tokens[5]));
             on_subgroup_type(cmd_tokens[1],get,capi,cmd_tokens[2],version,subgroup_index,shard_index);
         } else if (cmd_tokens[0] == "get_from_object_pool") {
-            if (cmd_tokens.size() < 3) {
+            if (cmd_tokens.size() < 2) {
                 print_red("Invalid format:" + cmdline);
                 continue;
             }
             
-            ObjectPoolMetadata obj_metadata = find_object_pool(capi, cmd_tokens[1]);
-            if(!obj_metadata.is_valid()){
-                print_red("Object Pool:" + cmd_tokens[1] + " hasn't created");
-                continue;
+            std::string key = (std::string) cmd_tokens[1];
+            size_t pos = key.rfind('/');
+            std::string prefix; // use prefix as object pool id
+            if (pos != std::string::npos) {
+                prefix = key.substr(0,pos);
+                ObjectPoolMetadata obj_metadata = find_object_pool(capi, prefix);
+                if(obj_metadata.is_valid()){
+                    subgroup_type = obj_metadata.subgroup_type;
+                    if (cmd_tokens.size() >= 3)
+                        version = static_cast<persistent::version_t>(std::stol(cmd_tokens[2]));
+                    on_subgroup_type(subgroup_type,get_from_object_pool,capi,cmd_tokens[1],version);
+                }
             }
-            subgroup_type = obj_metadata.subgroup_type;
-            if (cmd_tokens.size() >= 4)
-                version = static_cast<persistent::version_t>(std::stol(cmd_tokens[3]));
-            on_subgroup_type(subgroup_type,get_from_object_pool,capi,cmd_tokens[1],cmd_tokens[2],version);
         } else if (cmd_tokens[0] == "get_by_time") {
             if (cmd_tokens.size() < 4) {
                 print_red("Invalid format:" + cmdline);

@@ -360,7 +360,7 @@ namespace cascade {
          * key                              the key of the object
          */
         template <typename SubgroupType>
-        std::tuple<uint32_t, uint32_t> pick_shard(const std::string& obj_pool_id, const typename SubgroupType::KeyType& key);
+        std::tuple<uint32_t, uint32_t> pick_shard(const typename SubgroupType::KeyType& key);
 
         /**
          * Pick a member by a given a policy.
@@ -516,7 +516,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> put(const typename SubgroupType::ObjectType& object,
-                uint32_t subgroup_index=0, uint32_t shard_index=0);
+                uint32_t subgroup_index, uint32_t shard_index);
 
         /**
          * "trigger_put" writes an object to a given subgroup/shard.
@@ -529,7 +529,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<void> trigger_put(const typename SubgroupType::ObjectType& object,
-                uint32_t subgroup_index=0, uint32_t shard_index=0);
+                uint32_t subgroup_index, uint32_t shard_index);
 
         /**
          * "collective_trigger_put" writes an object to a set of nodes.
@@ -562,7 +562,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove(const typename SubgroupType::KeyType& key,
-                uint32_t subgroup_index=0, uint32_t shard_index=0);
+                uint32_t subgroup_index, uint32_t shard_index);
     
         /**
          * "get" retrieve the object of a given key
@@ -577,13 +577,13 @@ namespace cascade {
          * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(const typename SubgroupType::KeyType& key, const persistent::version_t& version = CURRENT_VERSION,
-                uint32_t subgroup_index=0, uint32_t shard_index=0);
+        derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(const typename SubgroupType::KeyType& key, const persistent::version_t& version,
+                uint32_t subgroup_index, uint32_t shard_index);
         
         /**
          * "put" writes an object to a object_pool.
          *
-         * @param object_pool_id    the object pool id to write the object
+         * @param 
          * @object                   the object to write.
          *                          User provided SubgroupType::ObjectType must have the following two members:
          *                          - SubgroupType::ObjectType::key of SubgroupType::KeyType, which must be set to a
@@ -599,9 +599,7 @@ namespace cascade {
          * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> put(
-                                                    const std::string& object_pool_id, 
-                                                    const typename SubgroupType::ObjectType& value);
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> put(const typename SubgroupType::ObjectType& value);
 
         /**
          * "trigger_put" writes an object to a object pool.
@@ -612,8 +610,7 @@ namespace cascade {
          * @return a void future.
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<void> trigger_put(const std::string& object_pool_id, 
-                                                    const typename SubgroupType::ObjectType& object);
+        derecho::rpc::QueryResults<void> trigger_put(const typename SubgroupType::ObjectType& object);
 
         /**
          * "remove" deletes an object within the object pool
@@ -624,9 +621,7 @@ namespace cascade {
          * @return a future to the version and timestamp of the put operation.
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove(
-                                                    const std::string& object_pool_id, 
-                                                    const typename SubgroupType::KeyType& key);
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove(const typename SubgroupType::KeyType& key);
         
         /**
          * "get" retrieve the object within the object pool
@@ -641,9 +636,7 @@ namespace cascade {
          * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
          */
         template <typename SubgroupType>
-        derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(
-                                                    const std::string& object_pool_id, 
-                                                    const typename SubgroupType::KeyType& key,
+        derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(const typename SubgroupType::KeyType& key,
                                                     const persistent::version_t& version=CURRENT_VERSION);
 
         /**

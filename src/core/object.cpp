@@ -378,7 +378,8 @@ ObjectWithStringKey create_null_object_cb<std::string,ObjectWithStringKey,&Objec
 bool ObjectPoolMetadata::operator==(const ObjectPoolMetadata& other) {
     return (this->object_pool_id == other.object_pool_id) && (this->subgroup_type == other.subgroup_type)
     && (this->subgroup_index == other.subgroup_index) && (this->sharding_policy == other.sharding_policy)
-    && (this->objects_locations == other.objects_locations) && (this->deleted == other.deleted);
+    && (this->objects_locations == other.objects_locations) && (this->version == other.version)
+    && (this->timestamp_us == other.timestamp_us) &&(this->deleted == other.deleted);
 }
 
 void ObjectPoolMetadata::operator=(const ObjectPoolMetadata& other) {
@@ -387,23 +388,16 @@ void ObjectPoolMetadata::operator=(const ObjectPoolMetadata& other) {
     this->subgroup_index = other.subgroup_index;
     this->sharding_policy = other.sharding_policy;
     this->objects_locations = other.objects_locations;
+    this->version = other.version;
+    this->timestamp_us = other.timestamp_us;
     this->deleted = other.deleted;
 }
 
 bool ObjectPoolMetadata::is_valid() const {
-    return (!object_pool_id.empty()) && (!this->deleted);
+    return ((!object_pool_id.empty()) && (0 == this->deleted));
 }
 
 // constructor 0 : copy constructor
-ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id, 
-                    const std::string& _subgroup_type, const uint32_t _subgroup_index):
-    object_pool_id(_object_pool_id),
-    subgroup_type(_subgroup_type),
-    subgroup_index(_subgroup_index),
-    sharding_policy(0),
-    deleted(false) {}
-
-// constructor 0.5 : copy consotructor
 ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id, 
                         const std::string& _subgroup_type, const uint32_t _subgroup_index,
                         const int _sharding_policy): 
@@ -411,7 +405,23 @@ ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id,
     subgroup_type(_subgroup_type),
     subgroup_index(_subgroup_index),
     sharding_policy(_sharding_policy),
-    deleted(false) {}
+    version(persistent::INVALID_VERSION),
+    timestamp_us(0),
+    deleted(0) {}
+
+// constructor 0.5 : copy constructor
+ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy,
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us): 
+    object_pool_id(_object_pool_id),
+    subgroup_type(_subgroup_type),
+    subgroup_index(_subgroup_index),
+    sharding_policy(_sharding_policy),
+    version(_version),
+    timestamp_us(_timestamp_us),
+    deleted(0) {}
 
     
 // constructor 1 : copy consotructor
@@ -424,18 +434,53 @@ ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id,
     subgroup_index(_subgroup_index),
     sharding_policy(_sharding_policy),
     objects_locations(_objects_locations),
-    deleted(false) {}
+    version(persistent::INVALID_VERSION),
+    timestamp_us(0),
+    deleted(0) {}
 
-// constructor 2 : move constructor
+// constructor 1.5: copy constructor
+ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id, 
+                    const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                    const int _sharding_policy, 
+                    const std::unordered_map<std::string,uint32_t> _objects_locations,
+                    const persistent::version_t _version,
+                    const uint64_t _timestamp_us):
+    object_pool_id(_object_pool_id),
+    subgroup_type(_subgroup_type),
+    subgroup_index(_subgroup_index),
+    sharding_policy(_sharding_policy),
+    objects_locations(_objects_locations),
+    version(_version),
+    timestamp_us(_timestamp_us),
+    deleted(0) {}
+
+// constructor 2 : copy consotructor
+ObjectPoolMetadata::ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy,
+                        const std::unordered_map<std::string,uint32_t> _objects_locations,
+                        const int _deleted): 
+    object_pool_id(_object_pool_id),
+    subgroup_type(_subgroup_type),
+    subgroup_index(_subgroup_index),
+    sharding_policy(_sharding_policy),
+    objects_locations(_objects_locations),
+    version(persistent::INVALID_VERSION),
+    timestamp_us(0),
+    deleted(_deleted) {}
+
+// constructor 3 : move constructor
 ObjectPoolMetadata::ObjectPoolMetadata(ObjectPoolMetadata&& other) : 
     object_pool_id(other.object_pool_id),
     subgroup_type(other.subgroup_type),
     subgroup_index(other.subgroup_index),
     sharding_policy(other.sharding_policy),
     objects_locations(other.objects_locations),
+    version(other.version),
+    timestamp_us(other.timestamp_us),
     deleted(other.deleted) {}
 
-// constructor 3 : copy constructor
+// constructor 4 : copy constructor
 ObjectPoolMetadata::ObjectPoolMetadata(const ObjectPoolMetadata& other) : 
     object_pool_id(other.object_pool_id),
     subgroup_type(other.subgroup_type),
@@ -444,14 +489,17 @@ ObjectPoolMetadata::ObjectPoolMetadata(const ObjectPoolMetadata& other) :
     objects_locations(other.objects_locations),
     deleted(other.deleted) {}
 
-// constructor 4 : default invalid constructor
+// constructor 5 : default invalid constructor
 ObjectPoolMetadata::ObjectPoolMetadata() : 
     object_pool_id(""),
     subgroup_type(""),
     subgroup_index(0),
     sharding_policy(0),
-    deleted(false) {}
+    deleted(0) {}
 
+void ObjectPoolMetadata::set_deleted(){
+    this->deleted = 1;
+}
 const std::string& ObjectPoolMetadata::get_key_ref() const {
     return this->object_pool_id;
 }
@@ -461,20 +509,23 @@ bool ObjectPoolMetadata::is_null() const {
 }
 
 void ObjectPoolMetadata::set_version(persistent::version_t ver) const {
+    this->version = ver;
 }
 
 persistent::version_t ObjectPoolMetadata::get_version() const {
-    return persistent::INVALID_VERSION;
+    return this->version;
 }
 
 void ObjectPoolMetadata::set_timestamp(uint64_t ts_us) const {
+    this->timestamp_us = ts_us;
 }
 
 uint64_t ObjectPoolMetadata::get_timestamp() const {
-    return 0;
+    return this->timestamp_us;
 }
 
 void ObjectPoolMetadata::set_previous_version(persistent::version_t prev_ver, persistent::version_t prev_ver_by_key) const {
+
 }
 
 bool ObjectPoolMetadata::verify_previous_version(persistent::version_t prev_ver, persistent::version_t prev_ver_by_key) const {
@@ -483,7 +534,7 @@ bool ObjectPoolMetadata::verify_previous_version(persistent::version_t prev_ver,
 
 template <>
 ObjectPoolMetadata create_null_object_cb<std::string,ObjectPoolMetadata,&ObjectPoolMetadata::IK,&ObjectPoolMetadata::IV>(const std::string& object_pool_id) {
-    return ObjectPoolMetadata(object_pool_id,"",0);
+    return ObjectPoolMetadata(object_pool_id,"",0,0);
 }
 
 

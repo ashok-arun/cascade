@@ -356,14 +356,11 @@ namespace cascade {
 
         /**
          * Pick a shard by a given object pool metadata.
-         * @param value
-         * @param object_pool_metadata
-         * @param subgroup_index  - default subgroup_index if object_pool_metadata not found
-         * @param shard_index     - default shard_index  
+         * @param object_pool_id            the object pool to pick for the object
+         * key                              the key of the object
          */
         template <typename SubgroupType>
-        std::tuple<uint32_t, uint32_t> pick_shard(const typename SubgroupType::KeyType& key, 
-                                                                uint32_t subgroup_index, uint32_t shard_index );
+        std::tuple<uint32_t, uint32_t> pick_shard(const std::string& obj_pool_id, const typename SubgroupType::KeyType& key);
 
         /**
          * Pick a member by a given a policy.
@@ -384,6 +381,7 @@ namespace cascade {
         template <typename SubgroupType>
         void refresh_member_cache_entry(uint32_t subgroup_index, uint32_t shard_index);
     public:
+        // META
         /**
          * The Constructor
          * @param _group_ptr The caller can pass a pointer pointing to a derecho group object. If the pointer is
@@ -391,15 +389,6 @@ namespace cascade {
          *                   client to communicate with group members.
          */
         ServiceClient(derecho::Group<CascadeTypes...>* _group_ptr=nullptr);
-        
-        // META
-        /**
-         * The Constructor2, this constructor initializes metadata cache of the object pool metadata subgroups
-         * @param _group_ptr The caller can pass a pointer pointing to a derecho group object. If the pointer is
-         *                   valid, the implementation will reply on the group object instead of creating an external
-         *                   client to communicate with group members.
-         */
-        ServiceClient(bool use_metadata, derecho::Group<CascadeTypes...>* _group_ptr=nullptr);
 
         
         /**
@@ -456,7 +445,7 @@ namespace cascade {
          * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
          */
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> create_object_pool(
-                                        std::string& object_pool_id,
+                                        std::string object_pool_id,
                                         ObjectPoolMetadata obj_pool_meta,
                                         uint32_t meta_subgroup_index=0, uint32_t meta_shard_index=0);
 
@@ -473,7 +462,7 @@ namespace cascade {
          * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
          */
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> insert_object_pool_locations(
-                                        std::string& object_pool_id,
+                                        const std::string& object_pool_id,
                                         std::unordered_map<std::string,uint32_t>  obj_locations,
                                         uint32_t meta_subgroup_index=0, uint32_t meta_shard_index=0);
         // META
@@ -482,11 +471,13 @@ namespace cascade {
          *          also delete the object_pool_metadata from local cache
          *
          * @param object_pool_id    the object_pool_id
+         * @meta_subgroup_id         the subgroup_id where the metadata information is stored, default 0
+         * @meta_shard               the shard where the metadata information is stored, default 0
          *
          * @return a future to the version and timestamp of the remove operation.
          */
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove_object_pool(
-                                        std::string& object_pool_id,
+                                        std::string object_pool_id,
                                         uint32_t metadata_subgroup_index=0, uint32_t meta_shard_index=0);
         // META
         /**
@@ -494,12 +485,15 @@ namespace cascade {
          *                    This function updates object_pool_info_cache if the object_pool_id is not found in local cache, 
          *                    but exist in metadatasubgroup
          * @param object_pool_id    the object_pool identifier.       
+         * @meta_subgroup_id         the subgroup_id where the metadata information is stored, default 0
+         * @meta_shard               the shard where the metadata information is stored, default 0
          *
          * @return : ObjectPoolMetadata object contains subgroup_type, subgroup_index, sharding_policy, 
          *                                     objects_locations in shard granularity
          */
-        ObjectPoolMetadata find_object_pool(std::string& object_pool_id);
-
+        ObjectPoolMetadata find_object_pool(const std::string& object_pool_id, 
+                                            uint32_t meta_subgroup_id=0, 
+                                            uint32_t meta_shard=0);
 
         /**
          * "put" writes an object to a given subgroup/shard.
@@ -522,7 +516,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> put(const typename SubgroupType::ObjectType& object,
-                uint32_t subgroup_index=0, uint32_t shard_index=0, bool use_meta=false);
+                uint32_t subgroup_index=0, uint32_t shard_index=0);
 
         /**
          * "trigger_put" writes an object to a given subgroup/shard.
@@ -535,7 +529,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<void> trigger_put(const typename SubgroupType::ObjectType& object,
-                uint32_t subgroup_index=0, uint32_t shard_index=0, bool use_meta=false);
+                uint32_t subgroup_index=0, uint32_t shard_index=0);
 
         /**
          * "collective_trigger_put" writes an object to a set of nodes.
@@ -555,7 +549,7 @@ namespace cascade {
         void collective_trigger_put(const typename SubgroupType::ObjectType& object,
                 uint32_t subgroup_index,
                 std::unordered_map<node_id_t,std::unique_ptr<derecho::rpc::QueryResults<void>>>& nodes_and_futures);
-    
+
         /**
          * "remove" deletes an object with the given key.
          *
@@ -568,7 +562,7 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove(const typename SubgroupType::KeyType& key,
-                uint32_t subgroup_index=0, uint32_t shard_index=0, bool use_meta=false);
+                uint32_t subgroup_index=0, uint32_t shard_index=0);
     
         /**
          * "get" retrieve the object of a given key
@@ -584,8 +578,74 @@ namespace cascade {
          */
         template <typename SubgroupType>
         derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(const typename SubgroupType::KeyType& key, const persistent::version_t& version = CURRENT_VERSION,
-                uint32_t subgroup_index=0, uint32_t shard_index=0, bool use_meta=false);
-    
+                uint32_t subgroup_index=0, uint32_t shard_index=0);
+        
+        /**
+         * "put" writes an object to a object_pool.
+         *
+         * @param object_pool_id    the object pool id to write the object
+         * @object                   the object to write.
+         *                          User provided SubgroupType::ObjectType must have the following two members:
+         *                          - SubgroupType::ObjectType::key of SubgroupType::KeyType, which must be set to a
+         *                            valid key.
+         *                          - SubgroupType::ObjectType::ver of std::tuple<persistent::version_t, uint64_t>.
+         *                            Similar to the return object, this member is a two tuple with the first member
+         *                            for a version and the second for a timestamp. A caller of put can specify either
+         *                            of the version and timestamp meaning what is the latest version/timestamp the caller
+         *                            has seen. Cascade will reject the write if the corresponding key has been updated
+         *                            already. TODO: should we make it an optional feature?
+         *
+         * @return a future to the version and timestamp of the put operation.
+         * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
+         */
+        template <typename SubgroupType>
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> put(
+                                                    const std::string& object_pool_id, 
+                                                    const typename SubgroupType::ObjectType& value);
+
+        /**
+         * "trigger_put" writes an object to a object pool.
+         *
+         * @param object_pool_id    the object pool id to trigger the put
+         * @object                   the object to write.
+         *
+         * @return a void future.
+         */
+        template <typename SubgroupType>
+        derecho::rpc::QueryResults<void> trigger_put(const std::string& object_pool_id, 
+                                                    const typename SubgroupType::ObjectType& object);
+
+        /**
+         * "remove" deletes an object within the object pool
+         *
+         * @param object_pool_id    the object pool id
+         * @key                      the object key
+         *
+         * @return a future to the version and timestamp of the put operation.
+         */
+        template <typename SubgroupType>
+        derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> remove(
+                                                    const std::string& object_pool_id, 
+                                                    const typename SubgroupType::KeyType& key);
+        
+        /**
+         * "get" retrieve the object within the object pool
+         *
+         * @param key               the object key
+         * @param version           if version is CURRENT_VERSION, this "get" will fire a ordered send to get the latest
+         *                          state of the key. Otherwise, it will try to read the key's state at version.
+         * @subugroup_index         the subgroup index of CascadeType
+         * @shard_index             the shard index.
+         *
+         * @return a future to the retrieved object.
+         * TODO: check if the user application is responsible for reclaim the future by reading it sometime.
+         */
+        template <typename SubgroupType>
+        derecho::rpc::QueryResults<const typename SubgroupType::ObjectType> get(
+                                                    const std::string& object_pool_id, 
+                                                    const typename SubgroupType::KeyType& key,
+                                                    const persistent::version_t& version=CURRENT_VERSION);
+
         /**
          * "get_by_time" retrieve the object of a given key
          *

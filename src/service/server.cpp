@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
 #ifndef NDEBUG
     dbg_default_trace("load layout:");
     dump_layout(group_layout);
-#endif//NDEBUG
+#endif //NDEBUG
 
     // META
     CascadeServiceCDPO<VolatileCascadeMetadataWithStringKey> cdpo_vcms;

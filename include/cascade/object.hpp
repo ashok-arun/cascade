@@ -266,20 +266,24 @@ public:
     int                                                 sharding_policy;         // index of shard member selection policy, default 0 
     mutable std::unordered_map<std::string,
                             uint32_t>                   objects_locations;       // the list of shards where it contains the objects
-    mutable bool                                        deleted;                 // deadline of the cleaning of objects inside the object_pool
-
+    mutable persistent::version_t                       version;                // object version
+    mutable uint64_t                                    timestamp_us;           // timestamp in microsecond
+    mutable int                                         deleted;                // for soft delete, TODO: set time to remove the object_pool
 
     bool operator==(const ObjectPoolMetadata& other);
     void operator=(const ObjectPoolMetadata& other);
 
     // constructor 0 : copy constructor
     ObjectPoolMetadata(const std::string& _object_pool_id, 
-                        const std::string& _subgroup_type, const uint32_t _subgroup_index );
-    
-    // constructor 0.5: copy constructor
-    ObjectPoolMetadata(const std::string& _object_pool_id, 
                         const std::string& _subgroup_type, const uint32_t _subgroup_index,
                         const int _sharding_policy);
+
+    // constructor 0.5 : copy constructor
+    ObjectPoolMetadata( const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy,
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us);
     
     // constructor 1: copy constructor
     ObjectPoolMetadata(const std::string& _object_pool_id, 
@@ -287,20 +291,35 @@ public:
                         const int _sharding_policy, 
                         const std::unordered_map<std::string,uint32_t> _objects_locations);
 
-    // constructor 2 : move constructor
+    // constructor 1.5: copy constructor
+    ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy, 
+                        const std::unordered_map<std::string,uint32_t> _objects_locations,
+                        const persistent::version_t _version,
+                        const uint64_t _timestamp_us);
+
+    // constructor 2: copy constructor
+    ObjectPoolMetadata(const std::string& _object_pool_id, 
+                        const std::string& _subgroup_type, const uint32_t _subgroup_index,
+                        const int _sharding_policy, 
+                        const std::unordered_map<std::string,uint32_t> _objects_locations,
+                        const int _deleted);
+
+    // constructor 3 : move constructor
     ObjectPoolMetadata (ObjectPoolMetadata&& other);
 
-    // constructor 3 : copy constructor
+    // constructor 4 : copy constructor
     ObjectPoolMetadata (const ObjectPoolMetadata& other);
 
-    // constructor 4 : default invalid constructor
+    // constructor 5 : default invalid constructor
     ObjectPoolMetadata();
 
+    void set_deleted();
     virtual const std::string& get_key_ref() const override;
     virtual bool is_null() const override;
     virtual bool is_valid() const override;
 
-    // functions not used, overwrite to match derecho::cascade::IKeepPreviousVersion::___
     virtual void set_version(persistent::version_t ver) const override;
     virtual persistent::version_t get_version() const override;
     virtual void set_timestamp(uint64_t ts_us) const override;
@@ -310,7 +329,7 @@ public:
 
 
     DEFAULT_SERIALIZATION_SUPPORT(ObjectPoolMetadata,object_pool_id, subgroup_type, subgroup_index, 
-                                                    sharding_policy, objects_locations);
+                                                    sharding_policy, objects_locations , deleted);
 
     // IK and IV for volatile cascade store
     static std::string IK;
@@ -319,7 +338,8 @@ public:
     std::string to_string() {
         std::string res = "ObjectPoolMetadata{pool_id:"+ object_pool_id + ", subgroup type:" + subgroup_type 
         +", subgroup index: " + std::to_string(subgroup_index) 
-        + ", sharding policy: "+ std::to_string(sharding_policy) + "}";
+        + ", sharding policy: "+ std::to_string(sharding_policy) + ", deleted: " + std::to_string(deleted)+
+        ", valid: "+ std::to_string(is_valid()) + "}";
         return res;
     }
 };
@@ -327,7 +347,9 @@ public:
 inline std::ostream& operator<<(std::ostream& out, const ObjectPoolMetadata& o) {
     out << "ObjectMetadataWithStringKey{object pool id:" << o.object_pool_id
         << ", \n   object pool info: subgroup type" << o.subgroup_type
-        << ", subgroup index: " << std::to_string(o.subgroup_index) << "}";
+        << ", subgroup index: " << std::to_string(o.subgroup_index) 
+        << ", subgroup sharding policy: " << std::to_string(o.sharding_policy) 
+        << "\n, object pool valid: " << std::to_string(o.is_valid())<< "}";
     return out;
 }
 

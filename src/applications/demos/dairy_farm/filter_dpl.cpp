@@ -18,10 +18,12 @@ std::string get_description() {
     return MY_DESC;
 }
 
-#define PHOTO_WIDTH            (352)
-#define PHOTO_HEIGHT           (240)
-#define TENSOR_BUFFER_SIZE     (PHOTO_WIDTH*PHOTO_HEIGHT*3)
-#define DPL_CONF_FILTER_MODEL  "CASCADE/filter_model"
+// #define FILTER_THRESHOLD       (0.35)
+#define FILTER_THRESHOLD       (0.9)
+#define IMAGE_WIDTH            (352)
+#define IMAGE_HEIGHT           (240)
+#define FILTER_TENSOR_BUFFER_SIZE     (IMAGE_WIDTH*IMAGE_HEIGHT*3)
+#define DPL_CONF_FILTER_MODEL         "CASCADE/filter_model"
 
 class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
     std::mutex p2p_send_mutex;
@@ -35,13 +37,15 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
         // TODO: test if there is a cow in the incoming frame.
         /* step 1: load the model */ 
         static thread_local cppflow::model model(derecho::getConfString(DPL_CONF_FILTER_MODEL));
-        
+        std::cout << "\033[1;31m"
+              << "REACHED FILTER"
+              << "\033[0m" << std::endl;
         /* step 2: Load the image & convert to tensor */
-        const VolatileCascadeStoreWithStringKey::ObjectType *tcss_value = reinterpret_cast<const VolatileCascadeStoreWithStringKey::ObjectType *>(value_ptr);
-        std::vector<float> tensor_buf(TENSOR_BUFFER_SIZE);
+        const TriggerCascadeNoStoreWithStringKey::ObjectType *tcss_value = reinterpret_cast<const TriggerCascadeNoStoreWithStringKey::ObjectType *>(value_ptr);
+        std::vector<float> tensor_buf(FILTER_TENSOR_BUFFER_SIZE);
         std::memcpy(static_cast<void*>(tensor_buf.data()),static_cast<const void*>(tcss_value->blob.bytes), tcss_value->blob.size);
-        cppflow::tensor input_tensor(tensor_buf, {1,PHOTO_WIDTH,PHOTO_HEIGHT,3});
-        // input_tensor = cppflow::expand_dims(input_tensor, 0);
+        cppflow::tensor input_tensor(tensor_buf, {IMAGE_WIDTH,IMAGE_HEIGHT,3});
+        input_tensor = cppflow::expand_dims(input_tensor, 0);
         
         /* step 3: Predict */
         cppflow::tensor output = model({{"serving_default_conv2d_3_input:0", input_tensor}},{"StatefulPartitionedCall:0"})[0];
@@ -49,29 +53,40 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
         /* step 4: Send intermediate results to the next tier if image frame is meaningful */
         // prediction < 0.35 indicates strong possibility that the image frame captures full contour of the cow
         float prediction = output.get_data<float>()[0];
-        std::cout << "prediction: " << prediction << std::endl;
-        if (prediction < 0.35) {
+
+        std::cout << "\033[1;31m"
+                    << "prediction: " << prediction 
+                    << "\033[0m" << std::endl;
+        if (prediction < FILTER_THRESHOLD) {
             std::string delim("/");
             std::string frame_idx = key_string.substr(key_string.rfind(delim) + 1);
             for (auto iter = outputs.begin(); iter != outputs.end(); ++iter) {
                 std::string obj_key = iter->first + delim + frame_idx;
-                VolatileCascadeStoreWithStringKey::ObjectType obj(obj_key,tcss_value->blob.bytes,tcss_value->blob.size);
+                // SMALL CHANGE 1
                 std::lock_guard<std::mutex> lock(p2p_send_mutex);
-                auto* typed_ctxt = dynamic_cast<CascadeContext<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
+                auto* typed_ctxt = dynamic_cast<CascadeContext<VolatileCascadeMetadataWithStringKey, VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
                 // if true, use trigger put; otherwise, use normal put
                 if (iter->second) {
-                    auto result = typed_ctxt->get_service_client_ref().template trigger_put<VolatileCascadeStoreWithStringKey>(obj);
+                    // TriggerCascadeNoStoreWithStringKey::ObjectType obj(obj_key,tcss_value->blob.bytes,tcss_value->blob.size);
+                    TriggerCascadeNoStoreWithStringKey::ObjectType obj(obj_key,tcss_value->blob);
+                    auto result = typed_ctxt->get_service_client_ref().template trigger_put<TriggerCascadeNoStoreWithStringKey>(obj,0,0);
+                    result.get();
                     // for (auto& reply_future:result.get()) {
-                    //     dbg_default_debug("node({}) fulfilled the reply futures",reply_future.first);
+                        // dbg_default_debug("node({}) fulfilled the reply futures",result.get());
                     // }
                 } 
                 else {
+                    VolatileCascadeStoreWithStringKey::ObjectType obj(obj_key,tcss_value->blob.bytes,tcss_value->blob.size);
                     auto result = typed_ctxt->get_service_client_ref().template put<VolatileCascadeStoreWithStringKey>(obj);
                     for (auto& reply_future:result.get()) {
                         auto reply = reply_future.second.get();
                         dbg_default_debug("node({}) replied with version:({:x},{}us)",reply_future.first,std::get<0>(reply),std::get<1>(reply));
                     }
+                    std::cout << "\033[1;31m"
+                        << "filter FINISED PUT"<< obj_key
+                        << "\033[0m" << std::endl;
                 }
+                return;
             }
         }
     }

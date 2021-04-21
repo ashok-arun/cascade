@@ -60,7 +60,7 @@ static void create_object_pool_test(ServiceClientAPI& capi){
     uint32_t subgroup_index1 = 0;
     std::string o_p_id1 = "farm1";
     std::string subgroup_type1 = "VCSS";
-    ObjectPoolMetadata obj_pool_metadata1(o_p_id1, subgroup_type1,subgroup_index1); 
+    ObjectPoolMetadata obj_pool_metadata1(o_p_id1, subgroup_type1,subgroup_index1,0); 
     derecho::rpc::QueryResults<std::tuple<persistent::version_t,uint64_t>> result1 = std::move( capi.create_object_pool(o_p_id1, obj_pool_metadata1));
     test_compare_objectpool_placement(capi, result1, o_p_id1, obj_pool_metadata1, "Create object pool metadata Test [1]");
 
@@ -137,14 +137,14 @@ static void get_from_objectPool_test(ServiceClientAPI& capi){
     persistent::version_t ver = persistent::INVALID_VERSION;
     std::string key = "farm1/camera1/img1";
     derecho::rpc::QueryResults<const typename VCS::ObjectType> result = capi.template get<VCS>(
-                key,ver,subgroup_index,shard_index, true /*use object pool get*/);
+                key,ver,subgroup_index,shard_index);
     check_get_result(result);
 }
 
 int main(int argc, char** argv) {
     /** initialize the parameters */
     derecho::Conf::initialize(argc,argv);
-    ServiceClientAPI capi(true);
+    ServiceClientAPI capi;
     create_object_pool_test(capi);
     remove_object_pool_test(capi);
     put_to_objectPool_test(capi);

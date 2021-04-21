@@ -41,7 +41,6 @@ class CascadeServiceCDPO: public CriticalDataPathObserver<CascadeType> {
                              ICascadeContext* cascade_ctxt,
                              bool is_trigger = false) override {
         if constexpr (std::is_convertible<typename CascadeType::KeyType,std::string>::value) {
-
             auto* ctxt = dynamic_cast<
                 CascadeContext<
                     VolatileCascadeMetadataWithStringKey,
@@ -60,6 +59,7 @@ class CascadeServiceCDPO: public CriticalDataPathObserver<CascadeType> {
                 Action action(key,value.get_version(),std::get<0>(handler.second),value_ptr,std::get<1>(handler.second));
                 ctxt->post(std::move(action),is_trigger);
             }
+            
         }
     }
 };

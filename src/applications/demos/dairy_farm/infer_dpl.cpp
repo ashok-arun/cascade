@@ -190,16 +190,10 @@ private:
         // TODO: do inference and put it to the storage object pool specified by outputs.
         const VolatileCascadeStoreWithStringKey::ObjectType *vcss_value = reinterpret_cast<const VolatileCascadeStoreWithStringKey::ObjectType *>(value_ptr);
         uint32_t cow_id;
-        std::cout << "\033[1;31m"
-              << "Beginning in infer"<< key_string
-              << "\033[0m" << std::endl;
+        dbg_default_debug(  "Beginning in infer");
         float bcs; 
         std::thread cow_id_inference(infer_cow_id, &cow_id, vcss_value->blob.bytes, vcss_value->blob.size);
         std::thread bcs_inference(infer_bcs, &bcs, vcss_value->blob.bytes, vcss_value->blob.size);
-
-        std::cout << "\033[1;31m"
-              << "finished first join"
-              << "\033[0m" << std::endl;
         cow_id_inference.join();
         bcs_inference.join();
         dbg_default_debug( "\n\n finished infer"+cow_id);
@@ -208,9 +202,6 @@ private:
         std::string delim("/");
         std::tuple<std::string, std::string> idx_ts = std::move(parse_key(key_string));
         std::string obj_value = std::to_string(bcs) + "_" + std::get<1>(idx_ts);
-        std::cout << "\033[1;31m"
-              << "Obj_value"<< obj_value
-              << "\033[0m" << std::endl;
         for (auto iter = outputs.begin(); iter != outputs.end(); ++iter) {
             std::string obj_key = iter->first + delim + std::to_string(cow_id);
             PersistentCascadeStoreWithStringKey::ObjectType obj(obj_key,obj_value.c_str(),obj_value.size());
@@ -229,6 +220,9 @@ private:
                     auto reply = reply_future.second.get();
                     dbg_default_debug("node({}) replied with version:({:x},{}us)",reply_future.first,std::get<0>(reply),std::get<1>(reply));
                 }
+                std::cout << "\033[1;31m"
+              << "Finished infer"
+              << "\033[0m" << std::endl;
             }
         }
     }

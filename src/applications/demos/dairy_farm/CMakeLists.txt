@@ -100,5 +100,9 @@ if (HAS_MXNET_CPP AND OPENCV_CORE_FOUND)
    add_custom_command(TARGET farm_image_client POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/cow_frame1.jpg
         ${CMAKE_CURRENT_BINARY_DIR}/cow_frame1.jpg
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/cow_frame2.jpg
+        ${CMAKE_CURRENT_BINARY_DIR}/cow_frame2.jpg
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/cow_frame3.jpg
+        ${CMAKE_CURRENT_BINARY_DIR}/cow_frame3.jpg
    )
 endif()

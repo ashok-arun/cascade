@@ -38,7 +38,7 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
         /* step 1: load the model */ 
         static thread_local cppflow::model model(derecho::getConfString(DPL_CONF_FILTER_MODEL));
         std::cout << "\033[1;31m"
-              << "REACHED FILTER"
+              << "Begin FILTER"
               << "\033[0m" << std::endl;
         /* step 2: Load the image & convert to tensor */
         const TriggerCascadeNoStoreWithStringKey::ObjectType *tcss_value = reinterpret_cast<const TriggerCascadeNoStoreWithStringKey::ObjectType *>(value_ptr);
@@ -54,9 +54,7 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
         // prediction < 0.35 indicates strong possibility that the image frame captures full contour of the cow
         float prediction = output.get_data<float>()[0];
 
-        std::cout << "\033[1;31m"
-                    << "prediction: " << prediction 
-                    << "\033[0m" << std::endl;
+        dbg_default_debug( "prediction: " );
         if (prediction < FILTER_THRESHOLD) {
             std::string delim("/");
             std::string frame_idx = key_string.substr(key_string.rfind(delim) + 1);
@@ -82,9 +80,6 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
                         auto reply = reply_future.second.get();
                         dbg_default_debug("node({}) replied with version:({:x},{}us)",reply_future.first,std::get<0>(reply),std::get<1>(reply));
                     }
-                    std::cout << "\033[1;31m"
-                        << "filter FINISED PUT"<< obj_key
-                        << "\033[0m" << std::endl;
                 }
                 return;
             }

@@ -3,4 +3,4 @@ set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 project(cascade CXX)
 
-add_subdirectory(dairy_farm)
+# add_subdirectory(dairy_farm)

@@ -206,7 +206,7 @@ private:
             std::string obj_key = iter->first + delim + std::to_string(cow_id);
             PersistentCascadeStoreWithStringKey::ObjectType obj(obj_key,obj_value.c_str(),obj_value.size());
             std::lock_guard<std::mutex> lock(p2p_send_mutex);
-            auto* typed_ctxt = dynamic_cast<CascadeContext<VolatileCascadeMetadataWithStringKey, VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
+            auto* typed_ctxt = dynamic_cast<CascadeContext< VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
             // if true, use trigger put; otherwise, use normal put
             if (iter->second) {
                 auto result = typed_ctxt->get_service_client_ref().template trigger_put<PersistentCascadeStoreWithStringKey>(obj);

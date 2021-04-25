@@ -41,9 +41,9 @@ class CascadeServiceCDPO: public CriticalDataPathObserver<CascadeType> {
                              ICascadeContext* cascade_ctxt,
                              bool is_trigger = false) override {
         if constexpr (std::is_convertible<typename CascadeType::KeyType,std::string>::value) {
+
             auto* ctxt = dynamic_cast<
                 CascadeContext<
-                    VolatileCascadeMetadataWithStringKey,
                     VolatileCascadeStoreWithStringKey,
                     PersistentCascadeStoreWithStringKey,
                     TriggerCascadeNoStoreWithStringKey>*
@@ -59,10 +59,21 @@ class CascadeServiceCDPO: public CriticalDataPathObserver<CascadeType> {
                 Action action(key,value.get_version(),std::get<0>(handler.second),value_ptr,std::get<1>(handler.second));
                 ctxt->post(std::move(action),is_trigger);
             }
-            
         }
     }
 };
+
+namespace derecho::cascade {
+// specialize create_null_object_cb for Cascade Types...
+using opm_t = ObjectPoolMetadata<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>;
+template<>
+opm_t create_null_object_cb<std::string,opm_t,&opm_t::IK,&opm_t::IV>(const std::string& key) {
+    opm_t opm;
+    opm.pathname = key;
+    opm.subgroup_type_index = opm_t::invalid_subgroup_type_index;
+    return opm;
+}
+}
 
 int main(int argc, char** argv) {
     // set proc name
@@ -76,17 +87,17 @@ int main(int argc, char** argv) {
 #ifndef NDEBUG
     dbg_default_trace("load layout:");
     dump_layout(group_layout);
-#endif //NDEBUG
+#endif//NDEBUG
 
-    // META
-    CascadeServiceCDPO<VolatileCascadeMetadataWithStringKey> cdpo_vcms;
     CascadeServiceCDPO<VolatileCascadeStoreWithStringKey> cdpo_vcss;
     CascadeServiceCDPO<PersistentCascadeStoreWithStringKey> cdpo_pcss;
     CascadeServiceCDPO<TriggerCascadeNoStoreWithStringKey> cdpo_tcss;
 
-    // META
-    auto vcms_factory = [&cdpo_vcms](persistent::PersistentRegistry*, derecho::subgroup_id_t, ICascadeContext* context_ptr) {
-        return std::make_unique<VolatileCascadeMetadataWithStringKey>(&cdpo_vcms,context_ptr);
+    auto meta_factory = [](persistent::PersistentRegistry* pr, derecho::subgroup_id_t, ICascadeContext* context_ptr) {
+        // critical data path for metadata service is currently disabled. But we can leverage it later for object pool
+        // metadata handling.
+        return std::make_unique<CascadeMetadataService<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>>(
+                pr,nullptr,context_ptr);
     };
     auto vcss_factory = [&cdpo_vcss](persistent::PersistentRegistry*, derecho::subgroup_id_t, ICascadeContext* context_ptr) {
         return std::make_unique<VolatileCascadeStoreWithStringKey>(&cdpo_vcss,context_ptr);
@@ -98,24 +109,22 @@ int main(int argc, char** argv) {
         return std::make_unique<TriggerCascadeNoStoreWithStringKey>(&cdpo_tcss,context_ptr);
     };
     dbg_default_trace("starting service...");
-    Service<VolatileCascadeMetadataWithStringKey,
-            VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::start(group_layout,
-            {&cdpo_vcms, &cdpo_vcss,&cdpo_pcss},
-            vcms_factory,vcss_factory,pcss_factory,tcss_factory);
+            {&cdpo_vcss,&cdpo_pcss,&cdpo_tcss},
+            meta_factory,
+            vcss_factory,pcss_factory,tcss_factory);
     dbg_default_trace("started service, waiting till it ends.");
     std::cout << "Press Enter to Shutdown." << std::endl;
     std::cin.get();
     // wait for service to quit.
-    Service<VolatileCascadeMetadataWithStringKey,
-            VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::shutdown(false);
     dbg_default_trace("shutdown service gracefully");
     // you can do something here to parallel the destructing process.
-    Service<VolatileCascadeMetadataWithStringKey,
-            VolatileCascadeStoreWithStringKey,
+    Service<VolatileCascadeStoreWithStringKey,
             PersistentCascadeStoreWithStringKey,
             TriggerCascadeNoStoreWithStringKey>::wait();
     dbg_default_trace("Finish shutdown.");

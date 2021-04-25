@@ -10,9 +10,8 @@ namespace derecho {
 namespace cascade {
 /**
  * The client API
- * META
  */
-using ServiceClientAPI = ServiceClient<VolatileCascadeMetadataWithStringKey, VolatileCascadeStoreWithStringKey, PersistentCascadeStoreWithStringKey, TriggerCascadeNoStoreWithStringKey>;
+using ServiceClientAPI = ServiceClient<VolatileCascadeStoreWithStringKey, PersistentCascadeStoreWithStringKey, TriggerCascadeNoStoreWithStringKey>;
 
 /**
  * Create Linq iterators on keys or versions of keys

@@ -62,7 +62,7 @@ class DairyFarmFilterOCDPO: public OffCriticalDataPathObserver {
                 std::string obj_key = iter->first + delim + frame_idx;
                 // SMALL CHANGE 1
                 std::lock_guard<std::mutex> lock(p2p_send_mutex);
-                auto* typed_ctxt = dynamic_cast<CascadeContext<VolatileCascadeMetadataWithStringKey, VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
+                auto* typed_ctxt = dynamic_cast<CascadeContext<VolatileCascadeStoreWithStringKey,PersistentCascadeStoreWithStringKey,TriggerCascadeNoStoreWithStringKey>*>(ctxt);
                 // if true, use trigger put; otherwise, use normal put
                 if (iter->second) {
                     // TriggerCascadeNoStoreWithStringKey::ObjectType obj(obj_key,tcss_value->blob.bytes,tcss_value->blob.size);

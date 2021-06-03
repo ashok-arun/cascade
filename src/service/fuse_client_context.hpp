@@ -61,20 +61,6 @@ public:
     std::shared_mutex children_mutex;
     fuse_ino_t parent;
 
-    // FuseClientINode();
-    // FuseClientINode(FuseClientINode& fci)
-    //     : type(fci.type),
-    //     display_name(fci.display_name),
-    //     children(fci.children),
-    //     parent(fci.parent) {}
-
-    // FuseClientINode(FuseClientINode&& fci)
-    //     : type{std::move(fci.type)},
-    //     display_name{std::move(fci.display_name)},
-    //     children{std::move(fci.children)},
-    //     parent{std::move(fci.parent)} {}
-
-
     /**
      * get directory entries. This is the default implementation.
      * Override it as required.
@@ -101,23 +87,18 @@ public:
         return false;
     }
 
-    virtual void traverse_objectpool_path(std::string key){
+    /** Helper recursive function: build the directory path based on object pool pathname
+     *  e.g. /ithaca/farm/cows should have three layer of directory: /ithaca, /ithaca/farm, /ithaca/farm/cows */
+    virtual void traverse_objectpool_path(std::string prev_dir, std::string remain_dir){
         return;
     }
 };
-
 
 template <typename CascadeType, typename ServiceClientType>
 class SubgroupINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ShardINode;
-
-template <typename ServiceClientType>
-class RootObjectPoolINode;
-
-template <typename CascadeType, typename ServiceClientType>
-class ObjectPoolPathINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class KeyINode;
@@ -127,6 +108,15 @@ class RootMetaINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ShardMetaINode;
+
+template <typename ServiceClientType>
+class ObjectPoolRootINode;
+
+template <typename CascadeType, typename ServiceClientType>
+class ObjectPoolPathINode;
+
+template <typename CascadeType, typename ServiceClientType>
+class ObjectPoolKeyINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ObjectPoolMetaINode;
@@ -387,21 +377,82 @@ public:
 };
 
 
+template <typename CascadeType, typename ServiceClientType>
+class KeyINode : public FuseClientINode {
+public:
+    typename CascadeType::KeyType key;
+    std::unique_ptr<ServiceClientType>& capi_ptr;
+    KeyINode(typename CascadeType::KeyType& k, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
+        key(k), capi_ptr(_capi_ptr) {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        this->type = INodeType::KEY;
+        if constexpr (std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, char*>::value ||
+                      std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, std::string>::value) {
+            this->display_name = std::string("key") + k;
+        } else if constexpr (std::is_arithmetic<std::remove_cv_t<typename CascadeType::KeyType>>::value) {
+            this->display_name = std::string("key") + std::to_string(k);
+        } else {
+            // KeyType is required to implement to_string() for types other than type string/arithmetic.
+            this->display_name = key.to_string();
+        }
+        this->parent = pino;
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+    }
+
+    virtual uint64_t read_file(FileBytes* file_bytes) override {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        ShardINode<CascadeType,ServiceClientType> *pino_shard = reinterpret_cast<ShardINode<CascadeType,ServiceClientType>*>(this->parent);
+        SubgroupINode<CascadeType,ServiceClientType> *pino_subgroup = reinterpret_cast<SubgroupINode<CascadeType,ServiceClientType>*>(pino_shard->parent);
+        auto result = capi_ptr->template get<CascadeType>(
+                key,CURRENT_VERSION,pino_subgroup->subgroup_index,pino_shard->shard_index);
+        for (auto& reply_future:result.get()) {
+            auto reply = reply_future.second.get();
+            file_bytes->size = mutils::bytes_size(reply);
+            file_bytes->bytes = static_cast<char*>(malloc(file_bytes->size));
+            mutils::to_bytes(reply,file_bytes->bytes);
+        }
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+        return 0;
+    }
+
+    virtual uint64_t get_file_size() override {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        ShardINode<CascadeType,ServiceClientType> *pino_shard = reinterpret_cast<ShardINode<CascadeType,ServiceClientType>*>(this->parent);
+        SubgroupINode<CascadeType,ServiceClientType> *pino_subgroup = reinterpret_cast<SubgroupINode<CascadeType,ServiceClientType>*>(pino_shard->parent);
+        auto result = capi_ptr->template get_size<CascadeType>(
+                key,CURRENT_VERSION,pino_subgroup->subgroup_index,pino_shard->shard_index);
+        uint64_t fsize = 0;
+        for (auto& reply_future:result.get()) {
+            fsize = reply_future.second.get();
+            break;
+        }
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+        return fsize;
+    }
+
+    KeyINode(KeyINode&& fci){
+        this->type = std::move(fci.type);
+        this->display_name = std::move(fci.display_name);
+        this->parent = std::move(fci.parent);
+        this->key = std::move(fci.key );
+        this->capi_ptr = std::move(fci.capi_ptr);
+    }
+
+    virtual ~KeyINode() {
+        dbg_default_info("[{}] entering {}.", gettid(), __func__);
+        dbg_default_info("[{}] leaving {}.", gettid(), __func__);
+    }
+};
+
+
 // ObjectPool INode
 template <typename ServiceClientType>
-class RootObjectPoolINode : public FuseClientINode {
-    const time_t update_interval;
+class ObjectPoolRootINode : public FuseClientINode {
     std::unique_ptr<ServiceClientType>& capi_ptr;
-    time_t last_update_sec;
-    std::string contents;
-    std::shared_mutex mutex;
 
-    
 public:
-    RootObjectPoolINode (std::unique_ptr<ServiceClientType>& _capi_ptr) :
-        update_interval (2), // membership refreshed in 2 seconds.
-        capi_ptr (_capi_ptr), 
-        last_update_sec(0) {
+    ObjectPoolRootINode (std::unique_ptr<ServiceClientType>& _capi_ptr) :
+        capi_ptr (_capi_ptr) {
         this->type = INodeType::CASCADE_OBJECTPOOL;
         this->display_name = "CascadeObjectPools";
         this->parent = FUSE_ROOT_ID;
@@ -411,49 +462,43 @@ public:
         return false;
     }
 
-    // Helper recursive function: OPTIMIZATION - lazy evaluation of the path
-    void traverse_objectpool_path(std::string key){
+    
+    void traverse_objectpool_path(std::string prev_dir, std::string remain_dir){
         // case1: base-case
-        auto start_pos = key.find("/");
+        auto start_pos = remain_dir.find("/");
         if (start_pos == std::string::npos){
             return;
         }
-        // case2: pathname.  Find parent objectPoolInode Then recurse
-        auto end_pos = key.substr(start_pos + 1).find("/");
-        std::string object_pool_name, new_key;
+        // case2: traverse the next level of directory.  Find parent objectPoolInode Then recurse
+        auto end_pos = remain_dir.substr(start_pos + 1).find("/");
+        std::string cur_dir;
         if (end_pos == std::string::npos){
-            object_pool_name = key.substr(start_pos + 1);
-            new_key = "";
+            cur_dir = prev_dir + remain_dir.substr(start_pos);
+            remain_dir = "";
         }else{
-            object_pool_name = key.substr(start_pos + 1, end_pos);
-            new_key = key.substr(end_pos);
+            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos - start_pos + 1);
+            remain_dir = remain_dir.substr(end_pos);
         }
-        // case2.1: If this pathname exists
+        // case2.1: If current directory already exists
         for(auto& inode : this->children){
             if (inode->type == INodeType::OBJECTPOOLPATH){
-                // auto object_pool_inode = static_cast<FuseClientINode>(*(inode.get()));
-                if(inode.get()->same_obj_pathname(object_pool_name)){
-                    inode.get()->traverse_objectpool_path(new_key);
+                if(inode.get()->same_obj_pathname(cur_dir)){
+                    inode.get()->traverse_objectpool_path(cur_dir, remain_dir);
                     return;
                 }
             }
         }
-        // case2.2: If this pathname doesn't exists, creates a new one
-        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(object_pool_name,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
-        this->children.back().get()->traverse_objectpool_path( new_key );
+        // case2.2: If current directory doesn't exists, creates a new one
+        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(cur_dir,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
+        this->children.back().get()->traverse_objectpool_path(cur_dir, remain_dir );
     }
 
     /** initialize */
     void initialize() {
-        std::cout << "\033[1;31m"
-              << "--RootObjectPoolINode initialize "
-              << "\033[0m" << std::endl;
         dbg_default_trace("[{}]entering {}.",gettid(),__func__);
         std::vector<std::string> object_pool_paths = capi_ptr->list_object_pools(true);
-        
-        //  DFS create and put object pools to the RootObjectPoolInode
         for (std::string pathname : object_pool_paths) {
-            this->traverse_objectpool_path(pathname);
+            this->traverse_objectpool_path("",pathname);
         }
     }
  
@@ -470,7 +515,8 @@ public:
     ObjectPoolPathINode (std::string op_pathname, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
         object_pool_pathname (op_pathname), capi_ptr(_capi_ptr) {
         this->type = INodeType::OBJECTPOOLPATH;
-        this->display_name =  object_pool_pathname;
+        auto pos = object_pool_pathname.rfind("/");
+        this->display_name =  object_pool_pathname.substr(pos + 1);
         this->parent = pino;
         this->children.emplace_back(std::make_unique<ObjectPoolMetaINode<CascadeType, ServiceClientType>>(op_pathname, capi_ptr));
     }
@@ -479,65 +525,49 @@ public:
         return object_pool_pathname == obj_pathname;
     }
 
-    void traverse_objectpool_path(std::string key){
-        std::cout << "\033[1;31m"
-              << " Traverse objectpool_path "
-              << "\033[0m" << std::endl;
-
-        // case1: base-case
-        auto start_pos = key.find("/");
+    /** Helper recursive function: build the directory path based on object pool pathname
+     *  e.g. /ithaca/farm/cows should have three layer of directory: /ithaca, /ithaca/farm, /ithaca/farm/cows */
+    void traverse_objectpool_path(std::string prev_dir, std::string remain_dir){
+        auto start_pos = remain_dir.find("/");
         if (start_pos == std::string::npos){
             return;
         }
-        // case2: pathname.  Find parent objectPoolInode Then recurse
-        auto end_pos = key.substr(start_pos + 1).find("/");
-        std::string object_pool_name, new_key;
+        auto end_pos = remain_dir.substr(start_pos + 1).find("/");
+        std::string cur_dir;
         if (end_pos == std::string::npos){
-            object_pool_name = key.substr(start_pos + 1);
-            new_key = "";
+            cur_dir = prev_dir + remain_dir.substr(start_pos);
+            remain_dir = "";
         }else{
-            object_pool_name = key.substr(start_pos + 1, end_pos);
-            new_key = key.substr(end_pos);
+            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos - start_pos + 1);
+            remain_dir = remain_dir.substr(end_pos);
         }
-        // case2.1: If this pathname exists
         for(auto& inode : this->children){
             if (inode->type == INodeType::OBJECTPOOLPATH){
-                // auto object_pool_inode = static_cast<FuseClientINode>(*(inode.get()));
-                if(inode.get()->same_obj_pathname(object_pool_name)){
-                    inode.get()->traverse_objectpool_path(new_key);
+                // auto object_pool_inode = static_cast<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(*(inode.get()));
+                if(inode.get()->same_obj_pathname(cur_dir)){
+                    inode.get()->traverse_objectpool_path(cur_dir, remain_dir);
                     return;
                 }
             }
         }
-        // case2.2: If this pathname doesn't exists, creates a new one
-        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(object_pool_name,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
-        this->children.back().get()->traverse_objectpool_path( new_key );
+        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(cur_dir,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
+        this->children.back().get()->traverse_objectpool_path(cur_dir, remain_dir );
     }
-
 
     virtual std::map<std::string,fuse_ino_t> get_dir_entries() override {
         std::cout << "\033[1;31m"
               << "Object Pool INODE"
               << "\033[0m" << std::endl;
         dbg_default_trace("\n\n   OBJECT POOL [{}]entering {}.",gettid(),__func__);
-        ObjectPoolMetadata op_metadata = capi_ptr->template find_object_pool(this->object_pool_pathname);
-        uint32_t subgroup_index = op_metadata.subgroup_index;
-        uint32_t shards = capi_ptr->template get_number_of_shards<CascadeType>(subgroup_index);
-        for (uint32_t shard_index; shard_index < shards; shard_index ++){
-            auto result =  capi_ptr->template list_keys<CascadeType>(CURRENT_VERSION, subgroup_index, shard_index);
-            for (auto& reply_future:result.get()) {
-                auto reply = reply_future.second.get();
-                std::unique_lock wlck(this->children_mutex);
-                for (auto& key: reply) {
-                    /** TODO: Optimize. 
-                     * 1. this parsing step is not efficient.
-                     * 2. same key been re-accessed on every obj pool */
-                    std::string key_pathname = get_pathname<typename CascadeType::KeyType>(key);
-                    if ( key_pathname == this->object_pool_pathname && opkey_to_ino.find(key) == opkey_to_ino.end()) {
-                        this->children.emplace_back(std::make_unique<KeyINode<CascadeType, ServiceClientType>>(key,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
-                        opkey_to_ino[key] = reinterpret_cast<fuse_ino_t>(this->children.back().get());
-                    }
-                }
+        dbg_default_error("ObjectPoolPathINode get dir, object_pool_pathname: {}.", object_pool_pathname);
+        persistent::version_t version = CURRENT_VERSION;
+        std::vector<std::unique_ptr<derecho::rpc::QueryResults<std::vector<std::string>>>> future_result = capi_ptr->template list_keys<CascadeType>(version, object_pool_pathname);
+        std::vector<std::string> reply = capi_ptr->template wait_list_keys<CascadeType>(future_result);
+        std::unique_lock wlck(this->children_mutex);
+        for (auto& key: reply) {
+            if (opkey_to_ino.find(key) == opkey_to_ino.end()) {
+                this->children.emplace_back(std::make_unique<ObjectPoolKeyINode<CascadeType, ServiceClientType>>(key,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
+                opkey_to_ino[key] = reinterpret_cast<fuse_ino_t>(this->children.back().get());
             }
         }
         dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
@@ -633,17 +663,18 @@ public:
 
 
 template <typename CascadeType, typename ServiceClientType>
-class KeyINode : public FuseClientINode {
+class ObjectPoolKeyINode : public FuseClientINode {
 public:
     typename CascadeType::KeyType key;
     std::unique_ptr<ServiceClientType>& capi_ptr;
-    KeyINode(typename CascadeType::KeyType& k, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
+
+    ObjectPoolKeyINode(typename CascadeType::KeyType& k, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
         key(k), capi_ptr(_capi_ptr) {
         dbg_default_trace("[{}]entering {}.", gettid(), __func__);
         this->type = INodeType::KEY;
         if constexpr (std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, char*>::value ||
                       std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, std::string>::value) {
-            this->display_name = std::string("key") + k;
+            this->display_name =  std::string("key") + k.substr(k.rfind("/") + 1);
         } else if constexpr (std::is_arithmetic<std::remove_cv_t<typename CascadeType::KeyType>>::value) {
             this->display_name = std::string("key") + std::to_string(k);
         } else {
@@ -656,10 +687,7 @@ public:
 
     virtual uint64_t read_file(FileBytes* file_bytes) override {
         dbg_default_trace("[{}]entering {}.", gettid(), __func__);
-        ShardINode<CascadeType,ServiceClientType> *pino_shard = reinterpret_cast<ShardINode<CascadeType,ServiceClientType>*>(this->parent);
-        SubgroupINode<CascadeType,ServiceClientType> *pino_subgroup = reinterpret_cast<SubgroupINode<CascadeType,ServiceClientType>*>(pino_shard->parent);
-        auto result = capi_ptr->template get<CascadeType>(
-                key,CURRENT_VERSION,pino_subgroup->subgroup_index,pino_shard->shard_index);
+        auto result = capi_ptr->template get<CascadeType>(key,CURRENT_VERSION);
         for (auto& reply_future:result.get()) {
             auto reply = reply_future.second.get();
             file_bytes->size = mutils::bytes_size(reply);
@@ -672,10 +700,7 @@ public:
 
     virtual uint64_t get_file_size() override {
         dbg_default_trace("[{}]entering {}.", gettid(), __func__);
-        ShardINode<CascadeType,ServiceClientType> *pino_shard = reinterpret_cast<ShardINode<CascadeType,ServiceClientType>*>(this->parent);
-        SubgroupINode<CascadeType,ServiceClientType> *pino_subgroup = reinterpret_cast<SubgroupINode<CascadeType,ServiceClientType>*>(pino_shard->parent);
-        auto result = capi_ptr->template get_size<CascadeType>(
-                key,CURRENT_VERSION,pino_subgroup->subgroup_index,pino_shard->shard_index);
+        auto result = capi_ptr->template get_size<CascadeType>(key,CURRENT_VERSION);
         uint64_t fsize = 0;
         for (auto& reply_future:result.get()) {
             fsize = reply_future.second.get();
@@ -685,7 +710,7 @@ public:
         return fsize;
     }
 
-    KeyINode(KeyINode&& fci){
+    ObjectPoolKeyINode(ObjectPoolKeyINode&& fci){
         this->type = std::move(fci.type);
         this->display_name = std::move(fci.display_name);
         this->parent = std::move(fci.parent);
@@ -693,7 +718,7 @@ public:
         this->capi_ptr = std::move(fci.capi_ptr);
     }
 
-    virtual ~KeyINode() {
+    virtual ~ObjectPoolKeyINode() {
         dbg_default_info("[{}] entering {}.", gettid(), __func__);
         dbg_default_info("[{}] leaving {}.", gettid(), __func__);
     }
@@ -722,7 +747,7 @@ private:
     RootMetaINode<ServiceClient<CascadeTypes...>> metadata_inode;
 
     /** ObjectPool */
-    RootObjectPoolINode<ServiceClient<CascadeTypes...>> objectpool_inode;
+    ObjectPoolRootINode<ServiceClient<CascadeTypes...>> objectpool_inode;
 
     /** fill inodes */
     void populate_inodes(const json& group_layout) {

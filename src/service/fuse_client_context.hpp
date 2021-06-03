@@ -61,6 +61,20 @@ public:
     std::shared_mutex children_mutex;
     fuse_ino_t parent;
 
+    // FuseClientINode();
+    // FuseClientINode(FuseClientINode& fci)
+    //     : type(fci.type),
+    //     display_name(fci.display_name),
+    //     children(fci.children),
+    //     parent(fci.parent) {}
+
+    // FuseClientINode(FuseClientINode&& fci)
+    //     : type{std::move(fci.type)},
+    //     display_name{std::move(fci.display_name)},
+    //     children{std::move(fci.children)},
+    //     parent{std::move(fci.parent)} {}
+
+
     /**
      * get directory entries. This is the default implementation.
      * Override it as required.
@@ -81,6 +95,15 @@ public:
         (void) fb;
         return 0;
     }
+
+
+    virtual bool same_obj_pathname(std::string obj_pathname) {
+        return false;
+    }
+
+    virtual void traverse_objectpool_path(std::string key){
+        return;
+    }
 };
 
 
@@ -89,6 +112,9 @@ class SubgroupINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ShardINode;
+
+template <typename ServiceClientType>
+class RootObjectPoolINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ObjectPoolPathINode;
@@ -150,6 +176,13 @@ class RootMetaINode : public FuseClientINode {
             contents += std::to_string(nid) + ",";
         }
         contents += "\n";
+        
+        auto objectpools = capi_ptr->list_object_pools();
+        contents = "number of objectpool in cascade service: " + std::to_string(objectpools.size()) + ".\nObjectpool paths: ";
+        for (auto& objectpool_path : objectpools) {
+            contents += objectpool_path + ",";
+        }
+        contents += "\n";
     }
 public:
     RootMetaINode (std::unique_ptr<ServiceClientType>& _capi_ptr) :
@@ -161,6 +194,10 @@ public:
     }
 
     virtual uint64_t get_file_size() override {
+        std::cout << "\033[1;31m"
+              << "--Root Meta INODE get_file_size"
+              << "\033[0m" << std::endl;
+        dbg_default_trace("[{}]entering {}.",gettid(),__func__);
         struct timespec now;
         std::shared_lock rlck(mutex);
         clock_gettime(CLOCK_REALTIME, &now);
@@ -203,6 +240,10 @@ public:
     const uint32_t subgroup_index;
 
     SubgroupINode (uint32_t sidx, fuse_ino_t pino) : subgroup_index(sidx) {
+        std::cout << "\033[1;31m"
+              << "--Subgroup INODE"
+              << "\033[0m" << std::endl;
+        dbg_default_trace("[{}]entering {}.",gettid(),__func__);
         this->type = INodeType::SUBGROUP;
         this->display_name = "subgroup-" + std::to_string(sidx);
         this->parent = pino;
@@ -227,9 +268,6 @@ public:
 
     // TODO: rethinking about the consistency
     virtual std::map<std::string,fuse_ino_t> get_dir_entries() override {
-        std::cout << "\033[1;31m"
-              << "SHARD INODE"
-              << "\033[0m" << std::endl;
         dbg_default_trace("[{}]entering {}.",gettid(),__func__);
         std::map<std::string,fuse_ino_t> ret_map;
         /** we always retrieve the key list for a shard inode because the data is highly dynamic */
@@ -348,6 +386,7 @@ public:
     }
 };
 
+
 // ObjectPool INode
 template <typename ServiceClientType>
 class RootObjectPoolINode : public FuseClientINode {
@@ -356,94 +395,136 @@ class RootObjectPoolINode : public FuseClientINode {
     time_t last_update_sec;
     std::string contents;
     std::shared_mutex mutex;
-    /**
-     * update the metadata. need write lock.
-     */
-    void update_contents () {
-        auto objectpools = capi_ptr->list_object_pools(true);
-        contents = "number of objectpool in cascade service: " + std::to_string(objectpools.size()) + ".\nObjectpool paths: ";
-        for (auto& objectpool_path : objectpools) {
-            contents += objectpool_path + ",";
-        }
-        contents += "\n";
-    }
+
+    
 public:
     RootObjectPoolINode (std::unique_ptr<ServiceClientType>& _capi_ptr) :
         update_interval (2), // membership refreshed in 2 seconds.
         capi_ptr (_capi_ptr), 
         last_update_sec(0) {
         this->type = INodeType::CASCADE_OBJECTPOOL;
-        this->display_name = "Cascade_ObjectPool";
+        this->display_name = "CascadeObjectPools";
         this->parent = FUSE_ROOT_ID;
     }
-
-    virtual uint64_t get_file_size() override {
-        struct timespec now;
-        std::shared_lock rlck(mutex);
-        clock_gettime(CLOCK_REALTIME, &now);
-        if (now.tv_sec > (last_update_sec + update_interval)){
-            rlck.unlock();
-            std::unique_lock wlck(mutex);
-            clock_gettime(CLOCK_REALTIME, &now);
-            if (now.tv_sec > (last_update_sec + update_interval)){
-                update_contents();
-            }
-            return contents.size();
-        } 
-        return contents.size();
+            
+    bool same_obj_pathname(std::string& obj_pathname){
+        return false;
     }
 
-    virtual uint64_t read_file(FileBytes* file_bytes) override {
-        struct timespec now;
-        std::shared_lock rlck(mutex);
-        clock_gettime(CLOCK_REALTIME, &now);
-        if (now.tv_sec > (last_update_sec + update_interval)){
-            rlck.unlock();
-            std::unique_lock wlck(mutex);
-            clock_gettime(CLOCK_REALTIME, &now);
-            if (now.tv_sec > (last_update_sec + update_interval)){
-                update_contents();
-            }
-            file_bytes->size = contents.size();
-            file_bytes->bytes = strdup(contents.c_str());
-        } else {
-            file_bytes->size = contents.size();
-            file_bytes->bytes = strdup(contents.c_str());
+    // Helper recursive function: OPTIMIZATION - lazy evaluation of the path
+    void traverse_objectpool_path(std::string key){
+        // case1: base-case
+        auto start_pos = key.find("/");
+        if (start_pos == std::string::npos){
+            return;
         }
-        return 0;
+        // case2: pathname.  Find parent objectPoolInode Then recurse
+        auto end_pos = key.substr(start_pos + 1).find("/");
+        std::string object_pool_name, new_key;
+        if (end_pos == std::string::npos){
+            object_pool_name = key.substr(start_pos + 1);
+            new_key = "";
+        }else{
+            object_pool_name = key.substr(start_pos + 1, end_pos);
+            new_key = key.substr(end_pos);
+        }
+        // case2.1: If this pathname exists
+        for(auto& inode : this->children){
+            if (inode->type == INodeType::OBJECTPOOLPATH){
+                // auto object_pool_inode = static_cast<FuseClientINode>(*(inode.get()));
+                if(inode.get()->same_obj_pathname(object_pool_name)){
+                    inode.get()->traverse_objectpool_path(new_key);
+                    return;
+                }
+            }
+        }
+        // case2.2: If this pathname doesn't exists, creates a new one
+        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(object_pool_name,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
+        this->children.back().get()->traverse_objectpool_path( new_key );
     }
+
+    /** initialize */
+    void initialize() {
+        std::cout << "\033[1;31m"
+              << "--RootObjectPoolINode initialize "
+              << "\033[0m" << std::endl;
+        dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+        std::vector<std::string> object_pool_paths = capi_ptr->list_object_pools(true);
+        
+        //  DFS create and put object pools to the RootObjectPoolInode
+        for (std::string pathname : object_pool_paths) {
+            this->traverse_objectpool_path(pathname);
+        }
+    }
+ 
 };
-
-
 
 
 template <typename CascadeType, typename ServiceClientType>
 class ObjectPoolPathINode : public FuseClientINode {
 public:
-    const std::string object_pool_pathname;
+    std::string object_pool_pathname;
     std::unique_ptr<ServiceClientType>& capi_ptr;
     std::map<typename CascadeType::KeyType, fuse_ino_t> opkey_to_ino;
 
     ObjectPoolPathINode (std::string op_pathname, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
         object_pool_pathname (op_pathname), capi_ptr(_capi_ptr) {
         this->type = INodeType::OBJECTPOOLPATH;
-        this->display_name = "object_pool-" + object_pool_pathname;
+        this->display_name =  object_pool_pathname;
         this->parent = pino;
-        RootObjectPoolINode<ServiceClientType>* p_objectpool_inode = reinterpret_cast<RootObjectPoolINode<ServiceClientType>*>(pino);
         this->children.emplace_back(std::make_unique<ObjectPoolMetaINode<CascadeType, ServiceClientType>>(op_pathname, capi_ptr));
     }
+
+    bool same_obj_pathname(std::string& obj_pathname){
+        return object_pool_pathname == obj_pathname;
+    }
+
+    void traverse_objectpool_path(std::string key){
+        std::cout << "\033[1;31m"
+              << " Traverse objectpool_path "
+              << "\033[0m" << std::endl;
+
+        // case1: base-case
+        auto start_pos = key.find("/");
+        if (start_pos == std::string::npos){
+            return;
+        }
+        // case2: pathname.  Find parent objectPoolInode Then recurse
+        auto end_pos = key.substr(start_pos + 1).find("/");
+        std::string object_pool_name, new_key;
+        if (end_pos == std::string::npos){
+            object_pool_name = key.substr(start_pos + 1);
+            new_key = "";
+        }else{
+            object_pool_name = key.substr(start_pos + 1, end_pos);
+            new_key = key.substr(end_pos);
+        }
+        // case2.1: If this pathname exists
+        for(auto& inode : this->children){
+            if (inode->type == INodeType::OBJECTPOOLPATH){
+                // auto object_pool_inode = static_cast<FuseClientINode>(*(inode.get()));
+                if(inode.get()->same_obj_pathname(object_pool_name)){
+                    inode.get()->traverse_objectpool_path(new_key);
+                    return;
+                }
+            }
+        }
+        // case2.2: If this pathname doesn't exists, creates a new one
+        this->children.emplace_back(std::make_unique<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(object_pool_name,reinterpret_cast<fuse_ino_t>(this),capi_ptr));
+        this->children.back().get()->traverse_objectpool_path( new_key );
+    }
+
 
     virtual std::map<std::string,fuse_ino_t> get_dir_entries() override {
         std::cout << "\033[1;31m"
               << "Object Pool INODE"
               << "\033[0m" << std::endl;
         dbg_default_trace("\n\n   OBJECT POOL [{}]entering {}.",gettid(),__func__);
-        std::map<std::string,fuse_ino_t> ret_map;
         ObjectPoolMetadata op_metadata = capi_ptr->template find_object_pool(this->object_pool_pathname);
         uint32_t subgroup_index = op_metadata.subgroup_index;
         uint32_t shards = capi_ptr->template get_number_of_shards<CascadeType>(subgroup_index);
         for (uint32_t shard_index; shard_index < shards; shard_index ++){
-            auto result =  capi_ptr->template list_keys<CascadeType>(CURRENT_VERSION, subgroup_index, this->shard_index);
+            auto result =  capi_ptr->template list_keys<CascadeType>(CURRENT_VERSION, subgroup_index, shard_index);
             for (auto& reply_future:result.get()) {
                 auto reply = reply_future.second.get();
                 std::unique_lock wlck(this->children_mutex);
@@ -467,10 +548,10 @@ public:
 template <typename CascadeType, typename ServiceClientType>
 class ObjectPoolMetaINode : public FuseClientINode {
 private:
-    const std::string   object_pool_pathname;
-    const uint32_t      subgroup_type_index; 
-    const uint32_t      subgroup_index;
-    const sharding_policy_t sharding_policy;
+    std::string   object_pool_pathname;
+    uint32_t      subgroup_type_index; 
+    uint32_t      subgroup_index;
+    sharding_policy_t sharding_policy;
     // std::unordered_map<std::string,uint32_t>    object_locations;
     bool                deleted;
     const time_t update_interval;
@@ -488,7 +569,7 @@ private:
         contents = "object pool pathname: " + object_pool_pathname + ".\nis deleted" + std::to_string(deleted) + "\n";
         auto policy = op_metadata.sharding_policy;
         contents += "Sharding policy:";
-        switch(sharding_policy) {
+        switch(policy) {
         case HASH:
             contents += "Hashing\n";
             break;
@@ -604,6 +685,14 @@ public:
         return fsize;
     }
 
+    KeyINode(KeyINode&& fci){
+        this->type = std::move(fci.type);
+        this->display_name = std::move(fci.display_name);
+        this->parent = std::move(fci.parent);
+        this->key = std::move(fci.key );
+        this->capi_ptr = std::move(fci.capi_ptr);
+    }
+
     virtual ~KeyINode() {
         dbg_default_info("[{}] entering {}.", gettid(), __func__);
         dbg_default_info("[{}] leaving {}.", gettid(), __func__);
@@ -641,7 +730,8 @@ private:
             dbg_default_error("JSON group layout is invalid (array expected): {}.", group_layout.get<std::string>());
             throw std::runtime_error("JSON group layout is invalid.");
         }
-        do_populate_inodes<CascadeTypes ...>(group_layout,0);
+        // OP change 0->1
+        do_populate_inodes<CascadeTypes ...>(group_layout,1);
     }
 
     template <typename Type>
@@ -663,6 +753,7 @@ public:
     void initialize(const json& group_layout) {
         dbg_default_debug("[{}]entering {} .", gettid(), __func__);
         populate_inodes(group_layout);
+        this->objectpool_inode.initialize();
         clock_gettime(CLOCK_REALTIME,&this->init_timestamp);
         this->is_initialized.store(true);
         dbg_default_debug("[{}]leaving {}.", gettid(), __func__);

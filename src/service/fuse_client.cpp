@@ -28,6 +28,7 @@
  */
 
 using namespace derecho::cascade;
+/** Q: include TriggerCascadeNoStoreWithStringKey? */
 using FuseClientContextType = FuseClientContext<VolatileCascadeStoreWithStringKey, PersistentCascadeStoreWithStringKey>;
 
 #define FCC(p) static_cast<FuseClientContextType*>(p)
@@ -240,9 +241,9 @@ int main(int argc, char** argv) {
         if (fuse_session_mount(se, opts.mountpoint) != 0) {
             throw 3;
         }
-
-        fuse_daemonize(opts.foreground);
-
+        /** A TODO: Uncomment this*/
+        // fuse_daemonize(opts.foreground);
+        
         if (opts.singlethread) {
             ret = fuse_session_loop(se);
         } else {

@@ -787,22 +787,16 @@ public:
 template <typename CascadeType, typename ServiceClientType>
 class DLLINode : public FuseClientINode {
 public:
-    typename CascadeType::KeyType key;
+    std::string file_name;   // id?
     std::unique_ptr<ServiceClientType>& capi_ptr;
-    DLLINode(typename CascadeType::KeyType& k, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
-        key(k), capi_ptr(_capi_ptr) {
+    DLLINode(std::string& _filename, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
+        file_name(_filename), capi_ptr(_capi_ptr) {
         dbg_default_trace("[{}]entering {}.", gettid(), __func__);
         this->type = INodeType::DLL;
-        if constexpr (std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, char*>::value ||
-                      std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, std::string>::value) {
-            this->display_name = std::string("key") + k;
-        } else if constexpr (std::is_arithmetic<std::remove_cv_t<typename CascadeType::KeyType>>::value) {
-            this->display_name = std::string("key") + std::to_string(k);
-        } else {
-            // KeyType is required to implement to_string() for types other than type string/arithmetic.
-            this->display_name = key.to_string();
-        }
+        this->display_name = std::string("dllfile") + _filename;
         this->parent = pino;
+
+        
         dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
     }
 
@@ -825,7 +819,7 @@ public:
         this->type = std::move(fci.type);
         this->display_name = std::move(fci.display_name);
         this->parent = std::move(fci.parent);
-        this->key = std::move(fci.key );
+        this->file_name = std::move(fci.file_name );
         this->capi_ptr = std::move(fci.capi_ptr);
     }
 

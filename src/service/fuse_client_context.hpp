@@ -29,10 +29,13 @@ typedef enum {
     CASCADE_TYPE,
     SUBGROUP,
     SHARD,
-    CASCADE_OBJECTPOOL,
-    OBJECTPOOLPATH,
+    OBJECTPOOL_ROOT,
+    OBJECTPOOL_PATH,
     KEY,
     META,
+    METADATA_SERVICE,
+    DATAPATH_LOGIC,
+    DLL,
 } INodeType;
 
 class FileBytes {
@@ -82,6 +85,8 @@ public:
         return 0;
     }
 
+    virtual void initialize(){
+    }
 
     virtual bool same_obj_pathname(std::string obj_pathname) {
         return false;
@@ -120,6 +125,15 @@ class ObjectPoolKeyINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class ObjectPoolMetaINode;
+
+template <typename ServiceClientType>
+class MetadataServiceRootINode;
+
+template <typename ServiceClientType>
+class DataPathLogicRootINode;
+
+template <typename CascadeType, typename ServiceClientType>
+class DLLINode;
 
 template <typename CascadeType, typename ServiceClientType>
 class CascadeTypeINode : public FuseClientINode {
@@ -453,15 +467,18 @@ class ObjectPoolRootINode : public FuseClientINode {
 public:
     ObjectPoolRootINode (std::unique_ptr<ServiceClientType>& _capi_ptr) :
         capi_ptr (_capi_ptr) {
-        this->type = INodeType::CASCADE_OBJECTPOOL;
-        this->display_name = "CascadeObjectPools";
+        this->type = INodeType::OBJECTPOOL_ROOT;
+        this->display_name = "ObjectPools";
         this->parent = FUSE_ROOT_ID;
     }
-            
-    bool same_obj_pathname(std::string& obj_pathname){
-        return false;
-    }
 
+    ObjectPoolRootINode (std::unique_ptr<ServiceClientType>& _capi_ptr, fuse_ino_t pino) :
+        capi_ptr (_capi_ptr) {
+        this->type = INodeType::OBJECTPOOL_ROOT;
+        this->display_name = "ObjectPools";
+        this->parent = FUSE_ROOT_ID;
+        this->parent = pino;
+    }
     
     void traverse_objectpool_path(std::string prev_dir, std::string remain_dir){
         // case1: base-case
@@ -476,12 +493,12 @@ public:
             cur_dir = prev_dir + remain_dir.substr(start_pos);
             remain_dir = "";
         }else{
-            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos - start_pos + 1);
-            remain_dir = remain_dir.substr(end_pos);
+            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos + 1);
+            remain_dir = remain_dir.substr(end_pos + start_pos + 1);
         }
         // case2.1: If current directory already exists
         for(auto& inode : this->children){
-            if (inode->type == INodeType::OBJECTPOOLPATH){
+            if (inode->type == INodeType::OBJECTPOOL_PATH){
                 if(inode.get()->same_obj_pathname(cur_dir)){
                     inode.get()->traverse_objectpool_path(cur_dir, remain_dir);
                     return;
@@ -514,15 +531,11 @@ public:
 
     ObjectPoolPathINode (std::string op_pathname, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
         object_pool_pathname (op_pathname), capi_ptr(_capi_ptr) {
-        this->type = INodeType::OBJECTPOOLPATH;
+        this->type = INodeType::OBJECTPOOL_PATH;
         auto pos = object_pool_pathname.rfind("/");
         this->display_name =  object_pool_pathname.substr(pos + 1);
         this->parent = pino;
         this->children.emplace_back(std::make_unique<ObjectPoolMetaINode<CascadeType, ServiceClientType>>(op_pathname, capi_ptr));
-    }
-
-    bool same_obj_pathname(std::string& obj_pathname){
-        return object_pool_pathname == obj_pathname;
     }
 
     /** Helper recursive function: build the directory path based on object pool pathname
@@ -538,11 +551,11 @@ public:
             cur_dir = prev_dir + remain_dir.substr(start_pos);
             remain_dir = "";
         }else{
-            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos - start_pos + 1);
-            remain_dir = remain_dir.substr(end_pos);
+            cur_dir = prev_dir + remain_dir.substr(start_pos, end_pos + 1);
+            remain_dir = remain_dir.substr(end_pos + start_pos + 1);
         }
         for(auto& inode : this->children){
-            if (inode->type == INodeType::OBJECTPOOLPATH){
+            if (inode->type == INodeType::OBJECTPOOL_PATH){
                 // auto object_pool_inode = static_cast<ObjectPoolPathINode<VolatileCascadeStoreWithStringKey, ServiceClientType>>(*(inode.get()));
                 if(inode.get()->same_obj_pathname(cur_dir)){
                     inode.get()->traverse_objectpool_path(cur_dir, remain_dir);
@@ -559,7 +572,6 @@ public:
               << "Object Pool INODE"
               << "\033[0m" << std::endl;
         dbg_default_trace("\n\n   OBJECT POOL [{}]entering {}.",gettid(),__func__);
-        dbg_default_error("ObjectPoolPathINode get dir, object_pool_pathname: {}.", object_pool_pathname);
         persistent::version_t version = CURRENT_VERSION;
         std::vector<std::unique_ptr<derecho::rpc::QueryResults<std::vector<std::string>>>> future_result = capi_ptr->template list_keys<CascadeType>(version, object_pool_pathname);
         std::vector<std::string> reply = capi_ptr->template wait_list_keys<CascadeType>(future_result);
@@ -724,6 +736,106 @@ public:
     }
 };
 
+ 
+template <typename ServiceClientType>
+class MetadataServiceRootINode : public FuseClientINode {
+    std::unique_ptr<ServiceClientType>& capi_ptr;
+
+public:
+    MetadataServiceRootINode(std::unique_ptr<ServiceClientType>& _capi_ptr) :
+        capi_ptr (_capi_ptr) {
+        this->type = INodeType::METADATA_SERVICE;
+        this->display_name = "MetadataService";
+        this->parent = FUSE_ROOT_ID;
+    }
+
+    void initialize() {
+        dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+        children.emplace_back(std::make_unique<ObjectPoolRootINode<ServiceClientType>>(capi_ptr, reinterpret_cast<fuse_ino_t>(this)));
+        this->children.back().get()->initialize();
+        children.emplace_back(std::make_unique<DataPathLogicRootINode<ServiceClientType>>(capi_ptr, reinterpret_cast<fuse_ino_t>(this)));
+        this->children.back().get()->initialize();
+    }
+ 
+};
+
+
+// ObjectPool INode
+template <typename ServiceClientType>
+class DataPathLogicRootINode : public FuseClientINode {
+    std::unique_ptr<ServiceClientType>& capi_ptr;
+
+public:
+    DataPathLogicRootINode (std::unique_ptr<ServiceClientType>& _capi_ptr, fuse_ino_t pino) :
+        capi_ptr (_capi_ptr) {
+        this->type = INodeType::DATAPATH_LOGIC;
+        this->display_name = "DataPathLogic";
+        this->parent = FUSE_ROOT_ID;
+        this->parent = pino;
+    }
+
+    /** initialize */
+    void initialize() {
+        dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+        // std::vector<std::string> object_pool_paths = capi_ptr->list_object_pools(true);
+        
+    }
+ 
+};
+
+
+template <typename CascadeType, typename ServiceClientType>
+class DLLINode : public FuseClientINode {
+public:
+    typename CascadeType::KeyType key;
+    std::unique_ptr<ServiceClientType>& capi_ptr;
+    DLLINode(typename CascadeType::KeyType& k, fuse_ino_t pino, std::unique_ptr<ServiceClientType>& _capi_ptr) : 
+        key(k), capi_ptr(_capi_ptr) {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        this->type = INodeType::DLL;
+        if constexpr (std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, char*>::value ||
+                      std::is_same<std::remove_cv_t<typename CascadeType::KeyType>, std::string>::value) {
+            this->display_name = std::string("key") + k;
+        } else if constexpr (std::is_arithmetic<std::remove_cv_t<typename CascadeType::KeyType>>::value) {
+            this->display_name = std::string("key") + std::to_string(k);
+        } else {
+            // KeyType is required to implement to_string() for types other than type string/arithmetic.
+            this->display_name = key.to_string();
+        }
+        this->parent = pino;
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+    }
+
+    /** TODO: read DLL ? */
+    virtual uint64_t read_file(FileBytes* file_bytes) override {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+        return 0;
+    }
+
+    /** TODO: size of DLL ? */
+    virtual uint64_t get_file_size() override {
+        dbg_default_trace("[{}]entering {}.", gettid(), __func__);
+        uint64_t fsize = 0;
+        dbg_default_trace("[{}]leaving {}.", gettid(), __func__);
+        return fsize;
+    }
+
+    DLLINode(DLLINode&& fci){
+        this->type = std::move(fci.type);
+        this->display_name = std::move(fci.display_name);
+        this->parent = std::move(fci.parent);
+        this->key = std::move(fci.key );
+        this->capi_ptr = std::move(fci.capi_ptr);
+    }
+
+    virtual ~DLLINode() {
+        dbg_default_info("[{}] entering {}.", gettid(), __func__);
+        dbg_default_info("[{}] leaving {}.", gettid(), __func__);
+    }
+};
+
+
 /**
  * The fuse filesystem context for fuse_client. This context will be used as 'userdata' on starting a fuse session.
  */
@@ -749,6 +861,9 @@ private:
     /** ObjectPool */
     ObjectPoolRootINode<ServiceClient<CascadeTypes...>> objectpool_inode;
 
+    /** Admin Metadata Service*/
+    MetadataServiceRootINode<ServiceClient<CascadeTypes...>> admin_metadata_inode;
+
     /** fill inodes */
     void populate_inodes(const json& group_layout) {
         if (!group_layout.is_array()) {
@@ -773,12 +888,14 @@ public:
     FuseClientContext() :
         capi_ptr(std::make_unique<ServiceClient<CascadeTypes...>>()),
         metadata_inode(capi_ptr),
-        objectpool_inode(capi_ptr){}
+        objectpool_inode(capi_ptr),
+        admin_metadata_inode(capi_ptr){}
     /** initialize */
     void initialize(const json& group_layout) {
         dbg_default_debug("[{}]entering {} .", gettid(), __func__);
         populate_inodes(group_layout);
         this->objectpool_inode.initialize();
+        this->admin_metadata_inode.initialize();
         clock_gettime(CLOCK_REALTIME,&this->init_timestamp);
         this->is_initialized.store(true);
         dbg_default_debug("[{}]leaving {}.", gettid(), __func__);
@@ -796,6 +913,7 @@ public:
                 });
             ret_map.emplace(metadata_inode.display_name,reinterpret_cast<fuse_ino_t>(&this->metadata_inode));
             ret_map.emplace(objectpool_inode.display_name,reinterpret_cast<fuse_ino_t>(&this->objectpool_inode));
+            ret_map.emplace(admin_metadata_inode.display_name,reinterpret_cast<fuse_ino_t>(&this->admin_metadata_inode));
         } else {
             FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
             ret_map = pfci->get_dir_entries(); // RVO
@@ -838,13 +956,19 @@ public:
                 stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;
                 stbuf.st_blksize = FUSE_CLIENT_BLK_SIZE;
                 break;
-            case INodeType::CASCADE_OBJECTPOOL:
+            case INodeType::OBJECTPOOL_ROOT:
                 stbuf.st_mode = S_IFDIR | 0755;
                 stbuf.st_size = pfci->get_file_size();
                 stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;
                 stbuf.st_blksize = FUSE_CLIENT_BLK_SIZE;
                 break;
-            case INodeType::OBJECTPOOLPATH:
+            case INodeType::METADATA_SERVICE:
+                stbuf.st_mode = S_IFDIR | 0755;
+                stbuf.st_size = pfci->get_file_size();
+                stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;
+                stbuf.st_blksize = FUSE_CLIENT_BLK_SIZE;
+                break;
+            case INodeType::OBJECTPOOL_PATH:
                 stbuf.st_mode = S_IFDIR | 0755;
                 stbuf.st_size = pfci->get_file_size();
                 stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;
@@ -857,6 +981,12 @@ public:
                 stbuf.st_blksize = FUSE_CLIENT_BLK_SIZE;
                 break;
             case INodeType::SHARD:
+                stbuf.st_mode = S_IFDIR | 0755;
+                stbuf.st_size = pfci->get_file_size();
+                stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;
+                stbuf.st_blksize = FUSE_CLIENT_BLK_SIZE;
+                break;
+            case INodeType::DATAPATH_LOGIC: 
                 stbuf.st_mode = S_IFDIR | 0755;
                 stbuf.st_size = pfci->get_file_size();
                 stbuf.st_blocks = (stbuf.st_size+FUSE_CLIENT_BLK_SIZE-1)/FUSE_CLIENT_BLK_SIZE;

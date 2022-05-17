@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include "fuse_client_context.hpp"
 #include <cascade/service_types.hpp>
 #include <derecho/conf/conf.hpp>
@@ -36,12 +37,12 @@ using FuseClientContextType = FuseClientContext<VolatileCascadeStoreWithStringKe
 static void fs_init(void* userdata, struct fuse_conn_info *conn) {
     dbg_default_trace("entering {}.",__func__);
     if (derecho::hasCustomizedConfKey(CONF_LAYOUT_JSON_LAYOUT)) {
-        FCC(userdata)->initialize(json::parse(derecho::getConfString(CONF_LAYOUT_JSON_LAYOUT)));
+      FCC(userdata)->initialize(json::parse(derecho::getConfString(CONF_LAYOUT_JSON_LAYOUT)));
     } else if (derecho::hasCustomizedConfKey(CONF_LAYOUT_JSON_LAYOUT_FILE)){
         nlohmann::json layout_array;
         std::ifstream json_file(derecho::getConfString(CONF_LAYOUT_JSON_LAYOUT_FILE));
         if (!json_file) {
-            dbg_default_error("Cannot load json configuration from file: {}", derecho::getConfString(CONF_LAYOUT_JSON_LAYOUT_FILE));
+	  dbg_default_error("Cannot load json configuration from file: {}", derecho::getConfString(CONF_LAYOUT_JSON_LAYOUT_FILE));
             throw derecho::derecho_exception("Cannot load json configuration from file.");
         }
         json_file >> layout_array;
@@ -58,7 +59,6 @@ static void fs_destroy(void* userdata) {
 static void fs_lookup(fuse_req_t req, fuse_ino_t parent, const char* name) {
     dbg_default_trace("entering {}.",__func__);
     struct fuse_entry_param e;
-
     // TODO: make this more efficient by implement a dedicated call in FCC.
     auto name_to_ino = FCC_REQ(req)->get_dir_entries(parent);
     if (name_to_ino.find(name) == name_to_ino.end()) {
@@ -86,7 +86,6 @@ static void fs_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info* fi
     FCC_REQ(req)->fill_stbuf_by_ino(stbuf);
 
     fuse_reply_attr(req, &stbuf, 10000.0);
-    //TODO:
     dbg_default_trace("leaving {}.",__func__);
 }
 
@@ -104,7 +103,6 @@ static void dirbuf_add(fuse_req_t req, struct dirbuf *b, const char *name, fuse_
     std::memset(&stbuf,0,sizeof(stbuf));
     stbuf.st_ino = ino;
     FCC_REQ(req)->fill_stbuf_by_ino(stbuf);
-    dbg_default_debug("ADDING direntry <{}>: stbuf.size = {} stbuf.ctime = {}, entry size = {}.", name, stbuf.st_size, stbuf.st_ctime, b->size-oldsize);
     fuse_add_direntry(req, b->p+oldsize, b->size-oldsize, name, &stbuf, b->size);
 }
 
@@ -120,10 +118,11 @@ static void fs_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, s
         dirbuf_add(req, &b, kv.first.c_str(), kv.second);
     }
     if (static_cast<size_t>(off) < b.size) {
-        fuse_reply_buf(req, b.p + off, min(b.size - off, size));
+      fuse_reply_buf(req, b.p + off, min(b.size - off, size));
     } else {
         fuse_reply_buf(req, NULL, 0);
     }
+    free(b.p);
     dbg_default_trace("leaving {}.",__func__);
 }
 
@@ -145,15 +144,11 @@ static void fs_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
     dbg_default_trace("entering {}.", __func__);
 
     FileBytes* pfb = reinterpret_cast<FileBytes*>(fi->fh);
-
-    dbg_default_trace("fs_read() with off:{}, size:{}, file_bytes:{}", off, size, pfb->size);
-    
     if (static_cast<size_t>(off) < pfb->size) {
         fuse_reply_buf(req, reinterpret_cast<char*>(pfb->bytes+off), min(pfb->size - off, size));
     } else {
         fuse_reply_buf(req, nullptr, 0);
     }
-
     dbg_default_trace("leaving {}.", __func__);
 }
 
@@ -188,6 +183,7 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .opendir    = NULL,
     .readdir    = fs_readdir,
 };
+
 
 /**
  * According to our experiment as well as recorded in
@@ -241,7 +237,7 @@ int main(int argc, char** argv) {
             throw 1;
         }
 
-        // TODO: start session
+        // start session
         FuseClientContextType fcc;
         se = fuse_session_new(&args, &fs_ops, sizeof(fs_ops), &fcc);
         if (se == nullptr) {
@@ -256,6 +252,7 @@ int main(int argc, char** argv) {
 
         fuse_daemonize(opts.foreground);
 
+	/* Block until ctrl+c or fuserount -u */
         if (opts.singlethread) {
             ret = fuse_session_loop(se);
         } else {

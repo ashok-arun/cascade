@@ -4,7 +4,6 @@ set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 find_package(derecho CONFIG REQUIRED)
-find_package(cascade CONFIG REQUIRED)
 
 if (${HAS_FUSE})
     add_executable(fuse_client fuse_client.cpp)

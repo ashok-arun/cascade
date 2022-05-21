@@ -159,6 +159,20 @@ static void fs_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info* fi
     dbg_default_trace("leaving {}.",__func__);
 }
 
+static void fs_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode) {
+    dbg_default_trace("entering {}.",__func__);
+    struct fuse_entry_param e;
+
+    auto name_to_ino = FCC_REQ(req)->get_dir_entries(parent);
+    if (name_to_ino.find(name) != name_to_ino.end()) {
+        fuse_reply_err(req, ENOENT);
+    } else {
+        FCC_REQ(req)->add_directory(parent, name);
+        fuse_reply_entry(req, &e);
+    }
+    dbg_default_trace("leaving {}.",__func__);
+}
+
 static const struct fuse_lowlevel_ops fs_ops = {
     .init       = fs_init,
     .destroy    = fs_destroy,
@@ -168,7 +182,7 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .setattr    = NULL,
     .readlink   = NULL,
     .mknod      = NULL,
-    .mkdir      = NULL,
+    .mkdir      = fs_mkdir,
     .unlink     = NULL,
     .rmdir      = NULL,
     .symlink    = NULL,

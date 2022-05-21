@@ -834,6 +834,14 @@ public:
       return FuseClientINode::get_dir_entries();
       
     }
+
+    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
+      std::string path = pfci->cur_pathname + "/" + std::string(name);
+      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    }
 };
   
 class ObjectPoolRootINode : public ObjectPoolPathINode {
@@ -868,6 +876,14 @@ public:
        
        dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
        return FuseClientINode::get_dir_entries();
+    }
+
+    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
+      std::string path = pfci->cur_pathname + "/" + std::string(name);
+      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
  
 };
@@ -1101,6 +1117,14 @@ public:
         }
         dbg_default_trace(" [{}]leaving {}.", gettid(), __func__);
         return ret_map;
+    }
+
+    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
+      std::string path = pfci->cur_pathname + "/" + std::string(name);
+      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 
     /** fill stbuf features

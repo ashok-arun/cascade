@@ -84,6 +84,9 @@ public:
         return 0;
     }
 
+    virtual void add_directory(fuse_ino_t parent, const char *name) {
+    }
+
     virtual void initialize(){
     }
 };

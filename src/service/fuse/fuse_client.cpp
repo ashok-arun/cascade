@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
             throw 3;
         }
 
-        fuse_daemonize(opts.foreground);
+        //fuse_daemonize(opts.foreground);
 
 	/* Block until ctrl+c or fuserount -u */
         if (opts.singlethread) {

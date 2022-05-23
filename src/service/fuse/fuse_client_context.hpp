@@ -839,7 +839,7 @@ public:
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
-      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 };
@@ -882,7 +882,7 @@ public:
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
-      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
  
@@ -1119,11 +1119,11 @@ public:
         return ret_map;
     }
 
-    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+    void add_directory(fuse_ino_t parent, const char *name) {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
-      capi.op_put<VolatileCascadeStoreWithStringKey>(path,0);
+      capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 

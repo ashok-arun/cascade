@@ -84,7 +84,7 @@ public:
         return 0;
     }
 
-    void create_directory(const char *name) {
+    virtual void create_directory(const char *name) {
     }
 
     virtual void initialize(){
@@ -838,7 +838,7 @@ public:
       
     }
 
-    void create_directory(const char *name) override {
+    virtual void create_directory(const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolInode {}.",path);
@@ -881,7 +881,7 @@ public:
        return FuseClientINode::get_dir_entries();
     }
 
-    void create_directory(const char *name) override {
+    virtual void create_directory(const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolRootInode {}.",path);

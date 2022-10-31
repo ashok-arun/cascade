@@ -838,7 +838,7 @@ public:
       
     }
 
-    virtual void create_directory(const char *name) override {
+    void create_directory(const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolInode {}.",path);
@@ -881,7 +881,7 @@ public:
        return FuseClientINode::get_dir_entries();
     }
 
-    virtual void create_directory(fuse_ino_t parent, const char *name) override {
+    void create_directory(const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolRootInode {}.",path);
@@ -1125,7 +1125,6 @@ public:
     void add_directory(fuse_ino_t ino, const char *name) {
         FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
         pfci->create_directory(name);
-        return 0;
     }
 
     /** fill stbuf features

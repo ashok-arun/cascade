@@ -84,7 +84,7 @@ public:
         return 0;
     }
 
-    virtual void add_directory(fuse_ino_t parent, const char *name) {
+    void create_directory(const char *name) {
     }
 
     virtual void initialize(){
@@ -838,10 +838,9 @@ public:
       
     }
 
-    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+    virtual void create_directory(const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
-      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
-      std::string path = pfci->cur_pathname + "/" + std::string(name);
+      std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolInode {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
@@ -882,10 +881,9 @@ public:
        return FuseClientINode::get_dir_entries();
     }
 
-    virtual void add_directory(fuse_ino_t parent, const char *name) override {
+    virtual void create_directory(fuse_ino_t parent, const char *name) override {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
-      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
-      std::string path = pfci->cur_pathname + "/" + std::string(name);
+      std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolRootInode {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
@@ -1124,14 +1122,11 @@ public:
         return ret_map;
     }
 
-    // void add_directory(fuse_ino_t parent, const char *name) {
-    //   dbg_default_trace("[{}]entering {}.",gettid(),__func__);
-    //   ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
-    //   std::string path = pfci->cur_pathname + "/" + std::string(name);
-    //   dbg_default_trace("inside basic {}.",path);
-    //   capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
-    //   dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
-    // }
+    void add_directory(fuse_ino_t ino, const char *name) {
+        FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
+        pfci->create_directory(name);
+        return 0;
+    }
 
     /** fill stbuf features
      * @param stbuf     This structure is filled according to its st_ino value.

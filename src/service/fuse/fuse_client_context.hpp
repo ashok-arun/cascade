@@ -842,6 +842,7 @@ public:
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
+      dbg_default_trace("inside objectpoolInode {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
@@ -885,6 +886,7 @@ public:
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
+      dbg_default_trace("inside objectpoolRootInode {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
@@ -1126,6 +1128,7 @@ public:
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
       ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
       std::string path = pfci->cur_pathname + "/" + std::string(name);
+      dbg_default_trace("inside basic {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }

@@ -168,7 +168,7 @@ static void fs_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t
         fuse_reply_err(req, ENOENT);
     } else {
         FCC_REQ(req)->add_directory(parent, name);
-        // fuse_reply_entry(req, &e);
+        fuse_reply_entry(req, &e);
     }
     dbg_default_trace("leaving {}.",__func__);
 }
@@ -182,7 +182,7 @@ static void fs_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
         fuse_reply_err(req, ENOENT);
     } else {
         FCC_REQ(req)->add_directory(parent, name);
-        // fuse_reply_entry(req, &e);
+        fuse_reply_entry(req, &e);
     }
     dbg_default_trace("leaving {}.",__func__);
 }

@@ -168,9 +168,21 @@ static void fs_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t
         fuse_reply_err(req, ENOENT);
     } else {
         FCC_REQ(req)->add_directory(parent, name);
-        fuse_reply_entry(req, &e);
+        // fuse_reply_entry(req, &e);
     }
     dbg_default_trace("leaving {}.",__func__);
+}
+
+static void fs_write(fuse_req_t req, fuse_ino_t ino, const char *buf, size_t size, off_t off, struct fuse_file_info *fi) {
+    dbg_default_trace("entering {}.", __func__);
+
+    FileBytes* pfb = reinterpret_cast<FileBytes*>(fi->fh);
+    if (static_cast<size_t>(off) < pfb->size) {
+        fuse_reply_buf(req, reinterpret_cast<char*>(pfb->bytes+off), min(pfb->size - off, size));
+    } else {
+        fuse_reply_buf(req, nullptr, 0);
+    }
+    dbg_default_trace("leaving {}.", __func__);
 }
 
 static const struct fuse_lowlevel_ops fs_ops = {
@@ -190,7 +202,7 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .link       = NULL,
     .open       = fs_open,
     .read       = fs_read,
-    .write      = NULL,
+    .write      = fs_write,
     .flush      = NULL,
     .release    = fs_release,
     .fsync      = NULL,

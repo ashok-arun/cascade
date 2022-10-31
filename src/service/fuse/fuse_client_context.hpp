@@ -1124,14 +1124,14 @@ public:
         return ret_map;
     }
 
-    void add_directory(fuse_ino_t parent, const char *name) {
-      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
-      ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
-      std::string path = pfci->cur_pathname + "/" + std::string(name);
-      dbg_default_trace("inside basic {}.",path);
-      capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
-      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
-    }
+    // void add_directory(fuse_ino_t parent, const char *name) {
+    //   dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+    //   ObjectPoolPathINode* pfci = reinterpret_cast<ObjectPoolPathINode*>(parent);
+    //   std::string path = pfci->cur_pathname + "/" + std::string(name);
+    //   dbg_default_trace("inside basic {}.",path);
+    //   capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
+    //   dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    // }
 
     /** fill stbuf features
      * @param stbuf     This structure is filled according to its st_ino value.

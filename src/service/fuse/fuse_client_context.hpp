@@ -91,6 +91,12 @@ public:
     virtual void create_directory(const char *name) {
     }
 
+    virtual void delete_directory(const char *name) {
+    }
+
+    virtual void write_file(const char *name) {
+    }
+
     virtual void initialize(){
     }
   
@@ -771,6 +777,15 @@ public:
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 
+    virtual void delete_directory(const char *name) override {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      std::string path = this->cur_pathname + "/" + std::string(name);
+      dbg_default_trace("inside objectpoolInode {}.",path);
+      capi.remove_object_pool(path);
+      update_objpINodes();
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    }
+
 private:
   virtual void update_contents () override{
       update_objpINodes();
@@ -801,6 +816,15 @@ public:
       std::string path = this->cur_pathname + "/" + std::string(name);
       dbg_default_trace("inside objectpoolRootInode {}.",path);
       capi.create_object_pool<VolatileCascadeStoreWithStringKey>(path,0);
+      update_objpINodes();
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    }
+
+    virtual void delete_directory(const char *name) override {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      std::string path = this->cur_pathname + "/" + std::string(name);
+      dbg_default_trace("inside objectpoolInode {}.",path);
+      capi.remove_object_pool(path);
       update_objpINodes();
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
@@ -1057,6 +1081,16 @@ public:
     void add_directory(fuse_ino_t ino, const char *name) {
         FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
         pfci->create_directory(name);
+    }
+
+    void remove_directory(fuse_ino_t ino, const char *name) {
+        FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
+        pfci->delete_directory(name);
+    }
+
+    void write(fuse_ino_t ino, const char *name) {
+        FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
+        pfci->write_file(name);
     }
 
     /** fill stbuf features

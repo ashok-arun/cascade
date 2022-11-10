@@ -786,6 +786,16 @@ public:
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 
+    virtual void write_file(const char *name) {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      ObjectWithStringKey obj;
+      obj.key = key;
+      obj.previous_version = pver;
+      obj.previous_version_by_key = pver_bk;
+      obj.blob = Blob(reinterpret_cast<const uint8_t*>(value.c_str()),value.length());
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    }
+
 private:
   virtual void update_contents () override{
       update_objpINodes();

@@ -245,7 +245,6 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .rmdir      = fs_rmdir,
     .symlink    = NULL,
     .link       = NULL,
-    .create     = fs_create,
     .open       = fs_open,
     .read       = fs_read,
     .write      = fs_write,
@@ -255,6 +254,7 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .opendir    = NULL,
     .readdir    = fs_readdir,
     .rename     = fs_move,
+    .create     = fs_create,
 };
 
 

@@ -94,7 +94,10 @@ public:
     virtual void delete_directory(const char *name) {
     }
 
-    virtual void write_file(const char *name) {
+    virtual void write_file(const char *buf, size_t size, off_t off) {
+    }
+
+    virtual void create_file(const char *name, mode_t mode, struct fuse_file_info *fi) {
     }
 
     virtual void initialize(){
@@ -786,13 +789,8 @@ public:
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 
-    virtual void write_file(const char *name) {
+    virtual void create_file(const char *name, mode_t mode, struct fuse_file_info *fi) {
       dbg_default_trace("[{}]entering {}.",gettid(),__func__);
-      ObjectWithStringKey obj;
-      obj.key = key;
-      obj.previous_version = pver;
-      obj.previous_version_by_key = pver_bk;
-      obj.blob = Blob(reinterpret_cast<const uint8_t*>(value.c_str()),value.length());
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 
@@ -892,6 +890,18 @@ public:
 	file_bytes.reset(nullptr);
         dbg_default_info("[{}] leaving {}.", gettid(), __func__);
     }
+
+    virtual void write_file(const char *buf, size_t size, off_t off) {
+      dbg_default_trace("[{}]entering {}.",gettid(),__func__);
+      ObjectWithStringKey obj;
+      obj.key = this->key;
+      obj.previous_version = persistent::INVALID_VERSION;
+      obj.previous_version_by_key = persistent::INVALID_VERSION;
+      obj.blob = Blob(reinterpret_cast<const uint8_t*>(buf.c_str()),buf.length());
+      capi.op_put(obj);
+      dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
+    }
+
 private:
   virtual void update_contents () override{
     dbg_default_debug("\n \n ----OBJP keyInode key is:[{}] - update content [{}] entering {}.", this->key ,gettid(), __func__);
@@ -1098,9 +1108,14 @@ public:
         pfci->delete_directory(name);
     }
 
-    void write(fuse_ino_t ino, const char *name) {
+    void write(fuse_ino_t ino, const char *buf, size_t size, off_t off) {
         FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
-        pfci->write_file(name);
+        pfci->write_file(buf, size, off);
+    }
+
+    void create(fuse_ino_t ino, const char *name, mode_t mode, struct fuse_file_info *fi) {
+        FuseClientINode* pfci = reinterpret_cast<FuseClientINode*>(ino);
+        pfci->create_file(name, mode, fi);
     }
 
     /** fill stbuf features

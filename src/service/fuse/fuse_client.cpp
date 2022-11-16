@@ -190,17 +190,17 @@ static void fs_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
     dbg_default_trace("leaving {}.",__func__);
 }
 
-static void fs_move(fuse_req_t req, fuse_ino_t parent, const char *name) {
+static void fs_move(fuse_req_t req, fuse_ino_t parent, const char *name, fuse_ino_t newparent, const char *newname, unsigned int flags) {
     dbg_default_trace("entering {}.",__func__);
-    struct fuse_entry_param e;
+    // struct fuse_entry_param e;
 
-    auto name_to_ino = FCC_REQ(req)->get_dir_entries(parent);
-    if (name_to_ino.find(name) == name_to_ino.end()) {
-        fuse_reply_err(req, ENOENT);
-    } else {
-        FCC_REQ(req)->remove_directory(parent, name);
-        fuse_reply_entry(req, &e);
-    }
+    // auto name_to_ino = FCC_REQ(req)->get_dir_entries(parent);
+    // if (name_to_ino.find(name) == name_to_ino.end()) {
+    //     fuse_reply_err(req, ENOENT);
+    // } else {
+    //     FCC_REQ(req)->remove_directory(parent, name);
+    //     fuse_reply_entry(req, &e);
+    // }
     dbg_default_trace("leaving {}.",__func__);
 }
 

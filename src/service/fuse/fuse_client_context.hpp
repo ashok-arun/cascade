@@ -898,7 +898,7 @@ public:
       obj.previous_version = persistent::INVALID_VERSION;
       obj.previous_version_by_key = persistent::INVALID_VERSION;
       obj.blob = Blob(reinterpret_cast<const uint8_t*>(buf),size);
-      capi.op_put(obj);
+    //   capi.op_put(obj);
       dbg_default_trace("[{}]leaving {}.",gettid(),__func__);
     }
 

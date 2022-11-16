@@ -224,7 +224,7 @@ static void fs_write(fuse_req_t req, fuse_ino_t ino, const char *buf, size_t siz
     FileBytes* pfb = reinterpret_cast<FileBytes*>(fi->fh);
     if (static_cast<size_t>(off) < pfb->size) {
         FCC_REQ(req)->write(ino, buf, size, off);
-        fuse_reply_write(req, size)
+        fuse_reply_write(req, size);
     } else {
         fuse_reply_err(req, ENOENT);
     }
@@ -245,7 +245,6 @@ static const struct fuse_lowlevel_ops fs_ops = {
     .unlink     = NULL,
     .rmdir      = fs_rmdir,
     .symlink    = NULL,
-    .rename     = NULL,
     .link       = NULL,
     .open       = fs_open,
     .read       = fs_read,

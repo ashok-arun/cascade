@@ -718,7 +718,7 @@ public:
 	   std::string name = cur_pathname + "/" + (*it)->display_name;
            if (((*it)->type == INodeType::OBJECTPOOL_PATH && (std::find(valid_subdirs.begin(),valid_subdirs.end(), name ) == valid_subdirs.end())) || (capi.find_object_pool(name).deleted==1)){
            dbg_default_trace("deleted name",name);
-	       objp_children.erase(objp_children.find(name));
+	       objp_children.erase(objp_children.find("/" + (*it)->display_name));
 	       it = this->children.erase(it);
            }else{
 	       ++it;
